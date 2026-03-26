@@ -57,7 +57,7 @@
 ### 第一步：克隆项目
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/trajectory-workbench.git
+git clone https://github.com/Stephen3zero24/trajectory-workbench.git
 cd trajectory-workbench
 ```
 
