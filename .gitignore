@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+.venv/
+.opensandbox-env/
+venv/
+
+# Node.js
+node_modules/
+web-ui/node_modules/
+
+# Output data
+output/
+*.jsonl
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Environment variables
+.env
+.env.local
+
+# Logs
+*.log
