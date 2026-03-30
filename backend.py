@@ -34,6 +34,13 @@ from opensandbox.models import WriteEntry
 sys.path.insert(0, os.path.dirname(__file__))
 from search2qa.scene_handler import run_search2qa_in_sandbox
 
+# ─── Toucan 集成 ──────────────────────────────────────────────────────────────
+try:
+    from toucan.toucan_api import register_toucan_routes
+    TOUCAN_AVAILABLE = True
+except ImportError:
+    TOUCAN_AVAILABLE = False
+
 # ─── 配置 ─────────────────────────────────────────────────────────────────────
 
 OPENSANDBOX_SERVER = os.environ.get("OPENSANDBOX_SERVER", "http://127.0.0.1:8080")
@@ -641,6 +648,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+if TOUCAN_AVAILABLE:
+    register_toucan_routes(app)
 
 # ─── API 端点 ──────────────────────────────────────────────────────────────────
 

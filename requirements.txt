@@ -11,3 +11,28 @@ fastapi>=0.110.0
 uvicorn>=0.27.0
 httpx>=0.27.0
 pydantic>=2.0.0
+
+# Trajectory Workbench 依赖
+# ─── 核心框架 ───
+fastapi>=0.100.0
+uvicorn>=0.23.0
+httpx>=0.24.0
+openai>=1.0.0
+opensandbox>=0.1.5
+
+# ─── Toucan 工具调用场景新增依赖 ───
+# Qwen-Agent (MCP 集成)
+# 注意: Qwen-Agent 需要从源码安装以支持 MCP
+# cd Qwen-Agent && pip install -e ".[mcp]"
+qwen-agent[mcp]>=0.1.0; python_version >= "3.10"
+
+# 句子嵌入（用于问题去重）
+sentence-transformers>=2.0.0
+
+# MCP 协议支持
+mcp>=1.0.0
+
+# ─── 通用工具 ───
+pydantic>=2.0.0
+python-dotenv>=1.0.0
+
