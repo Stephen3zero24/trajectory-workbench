@@ -1,0 +1,25 @@
+# ─── Search2QA 沙箱内依赖 ───
+# Web Scraping and Crawling
+requests>=2.31.0
+beautifulsoup4>=4.12.2
+lxml>=4.9.3
+trafilatura>=1.6.0
+crawl4ai>=0.3.0
+
+# Search
+duckduckgo-search>=4.1.0
+arxiv>=2.1.0
+
+# PDF Processing
+PyMuPDF>=1.23.0
+pymupdf4llm>=0.0.4
+
+# AI and LLM
+openai>=1.0.0
+
+# Utilities
+python-dotenv>=1.0.0
+tqdm>=4.66.0
+
+# Playwright
+playwright>=1.40.0
