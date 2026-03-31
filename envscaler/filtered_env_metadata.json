@@ -1,0 +1,108 @@
+[
+  {
+    "env_name": "ClinicScheduler",
+    "description": "诊所预约管理系统，支持患者预约查询、创建、取消等操作",
+    "code": "import uuid\nfrom datetime import datetime\n\nclass ClinicScheduler:\n    def __init__(self, patients=None, providers=None, services=None, appointments=None):\n        self.patients = {p['patient_id']: p for p in (patients or [])}\n        self.providers = {p['provider_id']: p for p in (providers or [])}\n        self.services = {s['service_id']: s for s in (services or [])}\n        self.appointments = appointments or []\n\n    def list_patient_appointments(self, patient_id: str) -> dict:\n        \"\"\"列出某位患者的所有预约\"\"\"\n        results = [a for a in self.appointments if a.get('patient_id') == patient_id]\n        return {'success': True, 'data': results}\n\n    def list_provider_appointments(self, provider_id: str, date: str = None) -> dict:\n        \"\"\"列出某位医生的预约，可按日期过滤\"\"\"\n        results = [a for a in self.appointments if a.get('provider_id') == provider_id]\n        if date:\n            results = [a for a in results if a.get('date') == date]\n        return {'success': True, 'data': results}\n\n    def get_patient_info(self, patient_id: str) -> dict:\n        \"\"\"获取患者信息\"\"\"\n        p = self.patients.get(patient_id)\n        if p:\n            return {'success': True, 'data': p}\n        return {'success': False, 'error': f'患者 {patient_id} 不存在'}\n\n    def create_appointment(self, patient_id: str, provider_id: str, service_id: str, date: str, start_time: str, end_time: str) -> dict:\n        \"\"\"创建新预约\"\"\"\n        if patient_id not in self.patients:\n            return {'success': False, 'error': f'患者 {patient_id} 不存在'}\n        if provider_id not in self.providers:\n            return {'success': False, 'error': f'医生 {provider_id} 不存在'}\n        # 检查时间冲突\n        for a in self.appointments:\n            if a['provider_id'] == provider_id and a['date'] == date:\n                if not (end_time <= a['start_time'] or start_time >= a['end_time']):\n                    return {'success': False, 'error': f'医生 {provider_id} 在 {date} {start_time}-{end_time} 有冲突'}\n        appt = {\n            'appointment_id': f'APPT-{uuid.uuid4().hex[:8].upper()}',\n            'patient_id': patient_id,\n            'provider_id': provider_id,\n            'service_id': service_id,\n            'date': date,\n            'start_time': start_time,\n            'end_time': end_time,\n            'status': 'pending'\n        }\n        self.appointments.append(appt)\n        return {'success': True, 'data': appt}\n\n    def cancel_appointment(self, appointment_id: str) -> dict:\n        \"\"\"取消预约\"\"\"\n        for a in self.appointments:\n            if a['appointment_id'] == appointment_id:\n                if a['status'] == 'cancelled':\n                    return {'success': False, 'error': '该预约已取消'}\n                a['status'] = 'cancelled'\n                return {'success': True, 'data': a}\n        return {'success': False, 'error': f'预约 {appointment_id} 不存在'}\n\n    def list_services(self) -> dict:\n        \"\"\"列出所有可用服务\"\"\"\n        return {'success': True, 'data': list(self.services.values())}\n\n    def list_providers(self, service_id: str = None) -> dict:\n        \"\"\"列出所有医生，可按服务过滤\"\"\"\n        results = list(self.providers.values())\n        if service_id:\n            results = [p for p in results if service_id in p.get('services', [])]\n        return {'success': True, 'data': results}\n",
+    "operations": [
+      {
+        "name": "list_patient_appointments",
+        "description": "列出某位患者的所有预约记录",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "patient_id": {
+              "type": "string",
+              "description": "患者ID，如 PAT-001"
+            }
+          },
+          "required": ["patient_id"]
+        }
+      },
+      {
+        "name": "list_provider_appointments",
+        "description": "列出某位医生的预约，可按日期过滤",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "provider_id": {
+              "type": "string",
+              "description": "医生ID"
+            },
+            "date": {
+              "type": "string",
+              "description": "日期过滤，格式 YYYY-MM-DD（可选）"
+            }
+          },
+          "required": ["provider_id"]
+        }
+      },
+      {
+        "name": "get_patient_info",
+        "description": "获取患者详细信息",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "patient_id": {
+              "type": "string",
+              "description": "患者ID"
+            }
+          },
+          "required": ["patient_id"]
+        }
+      },
+      {
+        "name": "create_appointment",
+        "description": "为患者创建新的预约",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "patient_id": { "type": "string", "description": "患者ID" },
+            "provider_id": { "type": "string", "description": "医生ID" },
+            "service_id": { "type": "string", "description": "服务项目ID" },
+            "date": { "type": "string", "description": "预约日期 YYYY-MM-DD" },
+            "start_time": { "type": "string", "description": "开始时间 HH:MM" },
+            "end_time": { "type": "string", "description": "结束时间 HH:MM" }
+          },
+          "required": ["patient_id", "provider_id", "service_id", "date", "start_time", "end_time"]
+        }
+      },
+      {
+        "name": "cancel_appointment",
+        "description": "取消一个已有的预约",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "appointment_id": {
+              "type": "string",
+              "description": "预约ID"
+            }
+          },
+          "required": ["appointment_id"]
+        }
+      },
+      {
+        "name": "list_services",
+        "description": "列出诊所提供的所有服务项目",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": []
+        }
+      },
+      {
+        "name": "list_providers",
+        "description": "列出所有医生，可按服务项目过滤",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "service_id": {
+              "type": "string",
+              "description": "服务项目ID（可选，不提供则返回所有医生）"
+            }
+          },
+          "required": []
+        }
+      }
+    ]
+  }
+]

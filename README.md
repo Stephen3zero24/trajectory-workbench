@@ -11,6 +11,7 @@
 - **自迭代闭环**：Review Agent 自动评估轨迹质量，按三级授权模型迭代优化
 - **三级授权审批**：低风险修改自动执行、中风险修改人工确认、高风险修改人工审批
 - **可视化工作台**：Web UI 实时展示执行日志、质量评分、审批操作和迭代历史
+- **多场景支持**：内置 EnvScaler、Search2QA、Toucan、ToolACE 等场景模块，支持代码执行、工具调用、搜索 QA 等多种轨迹类型
 
 ## 🏗️ 系统架构
 
@@ -237,16 +238,48 @@ python3 pipeline.py
 trajectory-workbench/
 ├── README.md                # 本文档
 ├── requirements.txt         # Python 依赖
-├── .gitignore              # Git 忽略规则
 ├── backend.py              # 后端 API 服务（FastAPI）
 ├── pipeline.py             # Pipeline 编排脚本（可独立运行）
+├── search2qa/              # Search2QA 场景模块
+├── toucan/                 # Toucan 工具调用场景模块
+├── toolace/                # ToolACE 工具调用场景模块
+├── envscaler/              # EnvScaler 工具调用场景模块 ← NEW
+│   ├── config.py           #   配置 + MCP Server 模板
+│   ├── scene_manager.py    #   场景文件加载/解析
+│   ├── sandbox_runner.py   #   沙箱 MCP Server 部署
+│   ├── trajectory_gen.py   #   Agent 轨迹生成
+│   ├── envscaler_pipeline.py #  Pipeline 编排 + Review + Export
+│   ├── envscaler_api.py    #   FastAPI 路由
+│   ├── test_local.py       #   本地集成测试
+│   └── examples/           #   示例场景文件（诊所预约系统）
 ├── web-ui/                 # 前端 Web UI
 │   ├── src/
 │   │   └── App.jsx         # 主界面组件
 │   ├── package.json
 │   └── ...
-└── output/                 # 导出的轨迹数据（自动生成，不提交到 Git）
+└── output/                 # 导出的轨迹数据（自动生成）
 ```
+
+## 🏗️ EnvScaler 工具调用场景
+
+基于 EnvScaler 环境骨架系统的**状态化环境**工具调用轨迹合成。与其他场景的区别在于：环境有持久状态、工具调用会改变环境状态、任务有 check 函数验证。
+
+### 使用方式
+
+1. 在 Web UI 场景选择中点击 **🏗️ EnvScaler工具调用**
+2. 上传场景文件：`env_scenario.json` + `filtered_env_metadata.json`
+3. 配置参数后启动 Pipeline
+
+系统会自动：创建沙箱 → 部署 MCP Server → Agent 通过 `scene_action` 工具与环境交互 → 采集轨迹 → 质量评估 → 导出数据集
+
+### 本地测试
+
+```bash
+cd trajectory-workbench
+python3 -m envscaler.test_local
+```
+
+详见 [envscaler/README.md](envscaler/README.md)
 
 ## ⚙️ 配置说明
 

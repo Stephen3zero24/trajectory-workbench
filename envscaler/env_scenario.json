@@ -1,0 +1,125 @@
+[
+  {
+    "task_id": "clinic_task_001",
+    "task_desc": "查询患者 PAT-002 的所有预约记录，并告诉我这个患者在 2025-08-15 当天有几个预约、分别是什么时间段。",
+    "env_name": "ClinicScheduler",
+    "init_config": {
+      "patients": [
+        {"patient_id": "PAT-001", "name": "张三", "age": 45, "phone": "138-0001-0001"},
+        {"patient_id": "PAT-002", "name": "李四", "age": 32, "phone": "139-0002-0002"},
+        {"patient_id": "PAT-003", "name": "王五", "age": 58, "phone": "137-0003-0003"}
+      ],
+      "providers": [
+        {"provider_id": "DR-AHMED-01", "name": "Dr. Ahmed", "specialty": "全科", "services": ["SRV-GEN-CHECK", "SRV-GEN-FOLLOW"]},
+        {"provider_id": "DR-LEE-ENT-02", "name": "Dr. Lee", "specialty": "耳鼻喉", "services": ["SRV-ENT-CONSULT", "SRV-ENT-PROC"]}
+      ],
+      "services": [
+        {"service_id": "SRV-GEN-CHECK", "name": "全科体检", "duration_min": 30, "price": 200},
+        {"service_id": "SRV-GEN-FOLLOW", "name": "全科复诊", "duration_min": 15, "price": 100},
+        {"service_id": "SRV-ENT-CONSULT", "name": "耳鼻喉科咨询", "duration_min": 20, "price": 150},
+        {"service_id": "SRV-ENT-PROC", "name": "耳鼻喉科处置", "duration_min": 45, "price": 500}
+      ],
+      "appointments": [
+        {
+          "appointment_id": "APPT-20250815-LEE-0930",
+          "patient_id": "PAT-002",
+          "provider_id": "DR-LEE-ENT-02",
+          "service_id": "SRV-ENT-CONSULT",
+          "date": "2025-08-15",
+          "start_time": "09:30",
+          "end_time": "09:50",
+          "status": "pending"
+        },
+        {
+          "appointment_id": "APPT-20250815-AHM-1400",
+          "patient_id": "PAT-002",
+          "provider_id": "DR-AHMED-01",
+          "service_id": "SRV-GEN-CHECK",
+          "date": "2025-08-15",
+          "start_time": "14:00",
+          "end_time": "14:30",
+          "status": "pending"
+        },
+        {
+          "appointment_id": "APPT-20250816-AHM-1000",
+          "patient_id": "PAT-001",
+          "provider_id": "DR-AHMED-01",
+          "service_id": "SRV-GEN-FOLLOW",
+          "date": "2025-08-16",
+          "start_time": "10:00",
+          "end_time": "10:15",
+          "status": "pending"
+        }
+      ]
+    },
+    "check_func": "def check(env): result = env.list_patient_appointments('PAT-002'); return result['success'] and len(result['data']) == 2"
+  },
+  {
+    "task_id": "clinic_task_002",
+    "task_desc": "帮患者 PAT-003（王五）预约 Dr. Ahmed 的全科体检服务，日期安排在 2025-08-16，时间 15:00-15:30。预约成功后，查看 Dr. Ahmed 在 2025-08-16 的完整排班情况。",
+    "env_name": "ClinicScheduler",
+    "init_config": {
+      "patients": [
+        {"patient_id": "PAT-001", "name": "张三", "age": 45, "phone": "138-0001-0001"},
+        {"patient_id": "PAT-002", "name": "李四", "age": 32, "phone": "139-0002-0002"},
+        {"patient_id": "PAT-003", "name": "王五", "age": 58, "phone": "137-0003-0003"}
+      ],
+      "providers": [
+        {"provider_id": "DR-AHMED-01", "name": "Dr. Ahmed", "specialty": "全科", "services": ["SRV-GEN-CHECK", "SRV-GEN-FOLLOW"]},
+        {"provider_id": "DR-LEE-ENT-02", "name": "Dr. Lee", "specialty": "耳鼻喉", "services": ["SRV-ENT-CONSULT"]}
+      ],
+      "services": [
+        {"service_id": "SRV-GEN-CHECK", "name": "全科体检", "duration_min": 30, "price": 200},
+        {"service_id": "SRV-GEN-FOLLOW", "name": "全科复诊", "duration_min": 15, "price": 100},
+        {"service_id": "SRV-ENT-CONSULT", "name": "耳鼻喉科咨询", "duration_min": 20, "price": 150}
+      ],
+      "appointments": [
+        {
+          "appointment_id": "APPT-20250816-AHM-1000",
+          "patient_id": "PAT-001",
+          "provider_id": "DR-AHMED-01",
+          "service_id": "SRV-GEN-FOLLOW",
+          "date": "2025-08-16",
+          "start_time": "10:00",
+          "end_time": "10:15",
+          "status": "pending"
+        }
+      ]
+    },
+    "check_func": "def check(env): appts = env.list_provider_appointments('DR-AHMED-01', '2025-08-16'); return appts['success'] and len(appts['data']) >= 2"
+  },
+  {
+    "task_id": "clinic_task_003",
+    "task_desc": "执行以下操作：(1) 先查看诊所提供哪些服务项目及价格；(2) 取消患者 PAT-001 在 2025-08-16 的复诊预约（预约ID: APPT-20250816-AHM-1000）；(3) 确认取消成功后，为 PAT-001 改约 Dr. Lee 的耳鼻喉科咨询，安排在 2025-08-17 下午 14:00-14:20。",
+    "env_name": "ClinicScheduler",
+    "init_config": {
+      "patients": [
+        {"patient_id": "PAT-001", "name": "张三", "age": 45, "phone": "138-0001-0001"},
+        {"patient_id": "PAT-002", "name": "李四", "age": 32, "phone": "139-0002-0002"}
+      ],
+      "providers": [
+        {"provider_id": "DR-AHMED-01", "name": "Dr. Ahmed", "specialty": "全科", "services": ["SRV-GEN-CHECK", "SRV-GEN-FOLLOW"]},
+        {"provider_id": "DR-LEE-ENT-02", "name": "Dr. Lee", "specialty": "耳鼻喉", "services": ["SRV-ENT-CONSULT", "SRV-ENT-PROC"]}
+      ],
+      "services": [
+        {"service_id": "SRV-GEN-CHECK", "name": "全科体检", "duration_min": 30, "price": 200},
+        {"service_id": "SRV-GEN-FOLLOW", "name": "全科复诊", "duration_min": 15, "price": 100},
+        {"service_id": "SRV-ENT-CONSULT", "name": "耳鼻喉科咨询", "duration_min": 20, "price": 150},
+        {"service_id": "SRV-ENT-PROC", "name": "耳鼻喉科处置", "duration_min": 45, "price": 500}
+      ],
+      "appointments": [
+        {
+          "appointment_id": "APPT-20250816-AHM-1000",
+          "patient_id": "PAT-001",
+          "provider_id": "DR-AHMED-01",
+          "service_id": "SRV-GEN-FOLLOW",
+          "date": "2025-08-16",
+          "start_time": "10:00",
+          "end_time": "10:15",
+          "status": "pending"
+        }
+      ]
+    },
+    "check_func": "def check(env): cancelled = [a for a in env.appointments if a['appointment_id']=='APPT-20250816-AHM-1000' and a['status']=='cancelled']; new_appt = [a for a in env.appointments if a['patient_id']=='PAT-001' and a['provider_id']=='DR-LEE-ENT-02']; return len(cancelled)==1 and len(new_appt)==1"
+  }
+]

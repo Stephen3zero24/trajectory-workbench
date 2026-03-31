@@ -48,6 +48,13 @@ try:
 except ImportError:
     TOOLACE_AVAILABLE = False
 
+# ─── EnvScaler 集成 ──────────────────────────────────────────────────────────
+try:
+    from envscaler.envscaler_api import register_envscaler_routes
+    ENVSCALER_AVAILABLE = True
+except ImportError:
+    ENVSCALER_AVAILABLE = False
+
 # ─── 配置 ─────────────────────────────────────────────────────────────────────
 
 OPENSANDBOX_SERVER = os.environ.get("OPENSANDBOX_SERVER", "http://127.0.0.1:8080")
@@ -643,6 +650,7 @@ async def lifespan(app: FastAPI):
     print(f"   DeepSeek API Key: {'已配置' if DEEPSEEK_API_KEY else '❌ 未配置'}")
     print(f"   Search2QA 场景: ✅ 已加载")
     print(f"   ToolACE 场景: {'✅ 已加载' if TOOLACE_AVAILABLE else '❌ 未加载'}")
+    print(f"   EnvScaler 场景: {'✅ 已加载' if ENVSCALER_AVAILABLE else '❌ 未加载'}")
     yield
     print("👋 后端关闭")
 
@@ -661,6 +669,9 @@ if TOUCAN_AVAILABLE:
 
 if TOOLACE_AVAILABLE:
     register_toolace_routes(app)
+
+if ENVSCALER_AVAILABLE:
+    register_envscaler_routes(app)
 
 # ─── API 端点 ──────────────────────────────────────────────────────────────────
 
@@ -946,6 +957,7 @@ async def delete_task(task_id: str):
 @app.get("/api/scenes")
 async def list_scenes():
     return {"scenes": [
+        {"id": "envscaler",   "name": "EnvScaler工具调用", "desc": "基于EnvScaler的状态化环境工具调用轨迹合成", "icon": "🏗️"},
         {"id": "mcp_tool",     "name": "MCP工具交互",    "desc": "Agent Harness的MCP交互、工具选择",     "icon": "⚙️"},
         {"id": "toolace",      "name": "ToolACE工具调用", "desc": "基于ToolACE的工具自进化+多轮调用轨迹合成", "icon": "🔧"},
         {"id": "gui",          "name": "GUI操作",        "desc": "浏览器/安卓系统GUI操控",              "icon": "🖥️"},

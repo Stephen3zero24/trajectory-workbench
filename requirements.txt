@@ -1,38 +1,27 @@
-# OpenSandbox
-opensandbox-server>=0.1.8
-opensandbox>=0.1.5
-opensandbox-code-interpreter>=0.1.1
+# ═══ Trajectory Workbench 依赖 ═══
 
-# LLM API (DeepSeek uses OpenAI-compatible format)
-openai>=1.0.0
-
-# Backend API
+# ─── 核心框架 ───
 fastapi>=0.110.0
 uvicorn>=0.27.0
 httpx>=0.27.0
 pydantic>=2.0.0
-
-# Trajectory Workbench 依赖
-# ─── 核心框架 ───
-fastapi>=0.100.0
-uvicorn>=0.23.0
-httpx>=0.24.0
 openai>=1.0.0
-opensandbox>=0.1.5
+python-dotenv>=1.0.0
+python-multipart>=0.0.6      # FastAPI 文件上传（EnvScaler 场景需要）
 
-# ─── Toucan 工具调用场景新增依赖 ───
+# ─── OpenSandbox ───
+opensandbox-server>=0.1.8
+opensandbox>=0.1.5
+opensandbox-code-interpreter>=0.1.1
+
+# ─── Toucan 工具调用场景 ───
 # Qwen-Agent (MCP 集成)
 # 注意: Qwen-Agent 需要从源码安装以支持 MCP
 # cd Qwen-Agent && pip install -e ".[mcp]"
 qwen-agent[mcp]>=0.1.0; python_version >= "3.10"
+sentence-transformers>=2.0.0  # 句子嵌入（问题去重）
+mcp>=1.0.0                    # MCP 协议支持
 
-# 句子嵌入（用于问题去重）
-sentence-transformers>=2.0.0
-
-# MCP 协议支持
-mcp>=1.0.0
-
-# ─── 通用工具 ───
-pydantic>=2.0.0
-python-dotenv>=1.0.0
-
+# ─── EnvScaler 工具调用场景 ───
+# fastmcp 主要在沙箱内安装, 此处列出供本地开发测试
+fastmcp>=3.1.1
