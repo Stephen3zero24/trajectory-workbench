@@ -2,16 +2,56 @@
 
 基于 [OpenSandbox](https://github.com/alibaba/OpenSandbox) 的 AI Agent 轨迹数据合成工作台。
 
-通过在安全隔离的沙箱环境中运行 LLM 驱动的 Agent，采集真实的 Observation → Thought → Action → Result 交互轨迹，并通过 Review Agent 自动评估和自迭代优化，最终产出高质量的 SFT/DPO/RLHF 训练数据集。
+通过在安全隔离的沙箱环境中运行 LLM 驱动的 Agent，采集真实的 **Observation → Thought → Action → Result** 交互轨迹，并通过 Review Agent 自动评估和自迭代优化，最终产出高质量的 SFT / DPO / RLHF 训练数据集。
+
+---
 
 ## ✨ 核心特性
 
 - **真实环境交互**：Agent 在 OpenSandbox 沙箱中执行真实命令，轨迹数据来源于闭环交互而非凭空生成
+- **多场景覆盖**：内置 5 种主流 Agent 场景，一套工作台即可产出多类型训练数据
 - **LLM 驱动决策**：Agent 由 DeepSeek-chat API 驱动，每一步自主推理和决策
 - **自迭代闭环**：Review Agent 自动评估轨迹质量，按三级授权模型迭代优化
-- **三级授权审批**：低风险修改自动执行、中风险修改人工确认、高风险修改人工审批
+- **三级授权审批**：低风险修改自动执行 → 中风险修改人工确认 → 高风险修改人工审批
 - **可视化工作台**：Web UI 实时展示执行日志、质量评分、审批操作和迭代历史
-- **多场景支持**：内置 EnvScaler、Search2QA、Toucan、ToolACE 等场景模块，支持代码执行、工具调用、搜索 QA 等多种轨迹类型
+
+---
+
+## 🎯 支持场景
+
+Trajectory Workbench 内置了 5 种 Agent 场景，覆盖当前主流的 Agent 能力评估维度。在 Web UI 或 CLI 中选择场景类型后，系统会在对应的沙箱环境中采集轨迹数据。
+
+### ⚙️ MCP 工具交互（`mcp_tool`）
+
+针对 Agent Harness 中的 MCP（Model Context Protocol）工具调用场景。Agent 需要根据任务描述，从可用工具集中选择合适的工具，正确构造参数并解析返回结果。适用于生成工具选择与调用链的训练数据。
+
+**典型任务示例**：调用文件管理工具创建目录结构、使用数据库工具执行查询、组合多个工具完成复合任务。
+
+### 🖥️ GUI 操作（`gui`）
+
+针对浏览器或安卓系统的 GUI 操控场景。Agent 需要理解界面元素、规划操作序列、执行点击/输入/滚动等交互动作。适用于生成 GUI 自动化、RPA 相关的训练数据。
+
+**典型任务示例**：在浏览器中填写表单并提交、在系统设置中修改配置项、在应用内完成多步操作流程。
+
+### 🔍 Deep Search（`deep_search`）
+
+针对搜索引擎检索与信息整合场景。Agent 需要将复杂问题拆解为多个子查询，逐步检索、筛选、交叉验证信息，最终整合形成结构化答案。适用于生成深度搜索和信息综合推理的训练数据。
+
+**典型任务示例**：对比多家公司的技术方案优劣、收集某领域近期研究进展并归纳趋势、验证某一说法的真实性。
+
+### 🤖 多 Agent 协调（`multi_agent`）
+
+针对多智能体协作与交互场景。多个 Agent 角色各司其职，通过消息传递、任务委派、结果汇总完成协作任务。适用于生成多轮多角色对话与协调决策的训练数据。
+
+**典型任务示例**：产品经理 Agent 提出需求 → 开发 Agent 编写代码 → 测试 Agent 验证结果；多个研究 Agent 分工调研后协作撰写报告。
+
+### 💻 代码执行（`code_exec`）
+
+针对代码编写、测试与执行场景。Agent 需要在沙箱中编写代码、安装依赖、运行测试，遇到错误时自主调试修复。这是最基础也最常用的场景，适用于生成代码生成与调试相关的训练数据。
+
+**典型任务示例**：创建 Python 项目并实现指定功能、编写单元测试并确保通过、调试并修复已有代码中的 bug。
+
+---
 
 ## 🏗️ 系统架构
 
@@ -32,16 +72,18 @@
 **工作流程：**
 
 ```
-用户提出任务 → 生成Pipeline → OpenSandbox执行 → 产出轨迹
-                                                    ↓
-                                            Review Agent 评估
-                                                    ↓
-                        ┌── 🟢 自主执行区 → 自动修改，重跑
-                        ├── 🟡 人工确认区 → Web UI选择方案
-                        └── 🔴 人工审批区 → Web UI审批
-                                                    ↓
-                                            质量达标 → 导出数据集
+用户提出任务 → 选择场景 → 生成Pipeline → OpenSandbox执行 → 产出轨迹
+                                                               ↓
+                                                       Review Agent 评估
+                                                               ↓
+                           ┌── 🟢 自主执行区 → 自动修改，重跑
+                           ├── 🟡 人工确认区 → Web UI选择方案
+                           └── 🔴 人工审批区 → Web UI审批
+                                                               ↓
+                                                       质量达标 → 导出数据集
 ```
+
+---
 
 ## 📋 环境要求
 
@@ -52,6 +94,8 @@
 | Python | 3.10+ | 推荐使用 `uv` 包管理器 |
 | Node.js | 18+ | 用于前端 Web UI |
 | DeepSeek API Key | - | 在 [platform.deepseek.com](https://platform.deepseek.com) 获取 |
+
+---
 
 ## 🚀 快速开始
 
@@ -184,10 +228,13 @@ VITE ready in XXX ms
 在浏览器中访问 **http://localhost:5173**
 
 页面顶部应显示两个绿色状态标签：
+
 - `OpenSandbox: connected` ✅
 - `DeepSeek: configured` ✅
 
 如果显示红色，请检查对应的服务是否正常启动。
+
+---
 
 ## 📖 使用教程
 
@@ -195,11 +242,14 @@ VITE ready in XXX ms
 
 在首页的任务描述框中输入你希望 Agent 完成的任务，或者点击示例按钮快速填入预设任务。
 
-然后选择场景类型、配置模型参数，点击 **"▶ 启动Pipeline"**。
+然后选择场景类型（MCP工具交互 / GUI操作 / Deep Search / 多Agent协调 / 代码执行），配置模型参数，点击 **"▶ 启动Pipeline"**。
+
+> 💡 **场景选择建议**：不确定时从「代码执行」开始，它的沙箱环境最通用、上手门槛最低。熟悉流程后再尝试其他场景。
 
 ### 2. 观察执行过程
 
 页面自动跳转到"沙箱执行"阶段，你可以实时看到：
+
 - 沙箱创建和初始化日志
 - Agent 每一步的决策和执行结果
 - Review Agent 的评估过程
@@ -216,7 +266,9 @@ VITE ready in XXX ms
 
 ### 4. 导出数据集
 
-当轨迹质量达到阈值（默认 80 分），或者你手动点击"跳过迭代 · 直接导出"，系统会将轨迹数据导出为 SFT/DPO/RLHF 格式，保存在项目目录的 `output/` 文件夹中。
+当轨迹质量达到阈值（默认 80 分），或者你手动点击"跳过迭代 · 直接导出"，系统会将轨迹数据导出为 SFT / DPO / RLHF 格式，保存在项目目录的 `output/` 文件夹中。
+
+---
 
 ## 🔧 仅使用命令行（无 Web UI）
 
@@ -230,7 +282,22 @@ export DEEPSEEK_API_KEY="your-api-key-here"
 python3 pipeline.py
 ```
 
-脚本会在终端中输出完整的执行过程和质量评估结果。
+脚本会在终端中输出完整的执行过程和质量评估结果。CLI 模式同样支持三级授权交互（通过终端输入选择/审批）。
+
+你也可以修改 `pipeline.py` 底部的 `TaskConfig` 来切换不同场景：
+
+```python
+config = TaskConfig(
+    task_id="task_001",
+    task_desc="你的任务描述...",
+    scene_type="mcp_tool",   # 修改为目标场景: mcp_tool / gui / deep_search / multi_agent / code_exec
+    model="deepseek-chat",
+    temperature=0.7,
+    max_steps=15,
+)
+```
+
+---
 
 ## 📁 项目结构
 
@@ -238,54 +305,27 @@ python3 pipeline.py
 trajectory-workbench/
 ├── README.md                # 本文档
 ├── requirements.txt         # Python 依赖
-├── backend.py              # 后端 API 服务（FastAPI）
-├── pipeline.py             # Pipeline 编排脚本（可独立运行）
-├── search2qa/              # Search2QA 场景模块
-├── toucan/                 # Toucan 工具调用场景模块
-├── toolace/                # ToolACE 工具调用场景模块
-├── envscaler/              # EnvScaler 工具调用场景模块 ← NEW
-│   ├── config.py           #   配置 + MCP Server 模板
-│   ├── scene_manager.py    #   场景文件加载/解析
-│   ├── sandbox_runner.py   #   沙箱 MCP Server 部署
-│   ├── trajectory_gen.py   #   Agent 轨迹生成
-│   ├── envscaler_pipeline.py #  Pipeline 编排 + Review + Export
-│   ├── envscaler_api.py    #   FastAPI 路由
-│   ├── test_local.py       #   本地集成测试
-│   └── examples/           #   示例场景文件（诊所预约系统）
+├── .gitignore              # Git 忽略规则
+├── backend.py              # 后端 API 服务（FastAPI），包含场景定义和完整执行逻辑
+├── pipeline.py             # Pipeline 编排脚本（可独立运行的 CLI 版本）
 ├── web-ui/                 # 前端 Web UI
 │   ├── src/
-│   │   └── App.jsx         # 主界面组件
+│   │   └── App.jsx         # 主界面组件（场景选择、执行监控、审批交互）
 │   ├── package.json
 │   └── ...
-└── output/                 # 导出的轨迹数据（自动生成）
+└── output/                 # 导出的轨迹数据（自动生成，不提交到 Git）
+    ├── *_export.json       # Web UI 导出格式
+    ├── *_sft_*.jsonl       # SFT 训练数据
+    └── best_trajectory_*.json  # 最佳轨迹
 ```
 
-## 🏗️ EnvScaler 工具调用场景
-
-基于 EnvScaler 环境骨架系统的**状态化环境**工具调用轨迹合成。与其他场景的区别在于：环境有持久状态、工具调用会改变环境状态、任务有 check 函数验证。
-
-### 使用方式
-
-1. 在 Web UI 场景选择中点击 **🏗️ EnvScaler工具调用**
-2. 上传场景文件：`env_scenario.json` + `filtered_env_metadata.json`
-3. 配置参数后启动 Pipeline
-
-系统会自动：创建沙箱 → 部署 MCP Server → Agent 通过 `scene_action` 工具与环境交互 → 采集轨迹 → 质量评估 → 导出数据集
-
-### 本地测试
-
-```bash
-cd trajectory-workbench
-python3 -m envscaler.test_local
-```
-
-详见 [envscaler/README.md](envscaler/README.md)
+---
 
 ## ⚙️ 配置说明
 
 ### 服务端口
 
-| 服务 | 默认端口 | 环境变量 |
+| 服务 | 默认端口 | 配置方式 |
 |------|---------|---------|
 | OpenSandbox Server | 8080 | 在 `~/.sandbox.toml` 中配置 |
 | Backend API | 3000 | 修改 `backend.py` 最后一行 |
@@ -299,15 +339,26 @@ python3 -m envscaler.test_local
 | `OPENSANDBOX_SERVER` | ❌ | OpenSandbox 地址，默认 `http://127.0.0.1:8080` |
 | `DEEPSEEK_BASE_URL` | ❌ | DeepSeek API 地址，默认 `https://api.deepseek.com` |
 
+### 支持的模型
+
+| 模型 ID | 名称 | 说明 |
+|--------|------|------|
+| `deepseek-chat` | DeepSeek-Chat (V3.2) | 默认模型，性价比高 |
+| `deepseek-reasoner` | DeepSeek-Reasoner (R1) | 推理能力更强，适合复杂任务 |
+
+DeepSeek API 使用 OpenAI 兼容格式，你也可以替换为其他兼容模型（见 FAQ）。
+
 ### Docker 资源配置（推荐）
 
 在 Docker Desktop → Settings → Resources 中设置：
 
 | 资源 | 推荐值 | 说明 |
-|------|--------|------|
+|------|-------|------|
 | CPUs | 4 | 留一半给宿主机 |
 | Memory | 8 GB | 每个沙箱约占 1-2GB |
 | Disk | 40 GB+ | 沙箱镜像需要存储空间 |
+
+---
 
 ## ❓ 常见问题
 
@@ -339,6 +390,10 @@ DEEPSEEK_BASE_URL = "https://api.openai.com/v1"  # 改为其他 API 地址
 export DEEPSEEK_API_KEY="your-other-api-key"
 ```
 
+### Q: 不同场景对沙箱环境有什么要求？
+
+目前所有场景共用同一个沙箱镜像（`opensandbox/code-interpreter:v1.0.2`），场景差异主要体现在 Agent 的系统提示和任务描述上。后续计划为 GUI 操作场景提供带有桌面环境的专用镜像。
+
 ### Q: 并发多少个沙箱合适？
 
 16GB 内存的机器建议最多同时运行 3 个沙箱。可在 Web UI 的 Pipeline 配置中调整并发数。
@@ -346,10 +401,25 @@ export DEEPSEEK_API_KEY="your-other-api-key"
 ### Q: 轨迹质量一直不达标怎么办？
 
 尝试以下方法：
+
 1. 简化任务描述，降低任务难度
 2. 降低质量达标阈值（如从 0.8 降到 0.7）
 3. 增加最大迭代轮次
 4. 调低 Temperature（如 0.3），提高 Agent 输出的确定性
+5. 切换到 `deepseek-reasoner` 模型获得更强的推理能力
+
+---
+
+## 🗺️ Roadmap
+
+- [ ] 为 GUI 操作场景提供带有桌面环境的沙箱镜像
+- [ ] Deep Search 场景接入真实搜索引擎 API
+- [ ] 多 Agent 协调场景支持自定义角色编排
+- [ ] 支持更多导出格式（ShareGPT、Alpaca）
+- [ ] 接入更多 LLM 提供商（OpenAI、Anthropic、本地模型）
+- [ ] 批量任务调度与数据集自动化生产
+
+---
 
 ## 🤝 技术栈
 
