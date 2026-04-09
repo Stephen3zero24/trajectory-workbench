@@ -27,6 +27,6 @@ mcp>=1.0.0                    # MCP 协议支持
 fastmcp>=3.1.1
 
 # ─── Mobile Agent (Android GUI) 场景 ───
-# 通过 OpenSandbox 管理 docker-android 镜像, 无额外 Python 依赖
-# 首次使用需拉取镜像: docker pull budtmo/docker-android:emulator_14.0
-# 宿主机/CCE 节点需支持 KVM (/dev/kvm)
+# 通过 OpenSandbox 管理 Redroid 容器, 无额外 Python 依赖
+# 首次使用需拉取镜像: docker pull redroid/redroid:14.0.0-latest
+# CCE 节点需加载 binder 内核模块: modprobe binder_linux (无需 KVM)

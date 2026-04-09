@@ -1,12 +1,12 @@
 # 📱 Mobile Agent — Android GUI 操控轨迹合成
 
-基于 OpenSandbox + [docker-android](https://github.com/budtmo/docker-android) 的 Android GUI Agent 轨迹数据合成模块。
+基于 OpenSandbox + [Redroid](https://github.com/remote-android/redroid-doc) 的 Android GUI Agent 轨迹数据合成模块。
 
 ## 概述
 
-Agent 在 OpenSandbox 管理的 Android 模拟器容器中执行真实 GUI 操控（点击、滑动、输入、按键），通过 VLM（视觉语言模型）理解屏幕截图和 UI 元素，自主规划并执行操作序列，最终产出高质量的 `screenshot → thought → action → result` 交互轨迹。
+Agent 在 OpenSandbox 管理的 Redroid 容器中执行真实 GUI 操控（点击、滑动、输入、按键），通过 VLM（视觉语言模型）理解屏幕截图和 UI 元素，自主规划并执行操作序列，最终产出高质量的 `screenshot → thought → action → result` 交互轨迹。
 
-与其他引擎（envscaler / toolace / toucan）共用同一个 OpenSandbox 控制面，区别仅在于使用 Android 模拟器镜像，并通过 ADB 命令进行 GUI 操控。
+与其他引擎（envscaler / toolace / toucan）共用同一个 OpenSandbox 控制面，区别仅在于使用 Redroid 镜像，并通过 ADB 命令进行 GUI 操控。
 
 ## Pipeline
 
@@ -15,7 +15,7 @@ Step 0: 场景加载
   └→ 解析 mobile_scenarios.json → MobileScenarioTask 列表
 
 Step 1: OpenSandbox 启动 Android 沙箱
-  └→ OpenSandbox API 创建容器 (budtmo/docker-android:emulator_14.0)
+  └→ OpenSandbox API 创建容器 (redroid/redroid:14.0.0-latest)
   └→ 等待 Android 模拟器启动 (sys.boot_completed)
   └→ 通过 ADB 获取屏幕分辨率
 
@@ -46,7 +46,7 @@ Export: 数据集导出
                      │                                         │
   envscaler ────────▶│  opensandbox/code-interpreter ──→ MCP   │
   toolace  ─────────▶│  opensandbox/code-interpreter ──→ MCP   │
-  mobile_agent ─────▶│  budtmo/docker-android ─────────→ ADB   │◀── 本模块
+  mobile_agent ─────▶│  redroid/redroid ─────────→ ADB   │◀── 本模块
                      │                                         │
                      └─────────────────────────────────────────┘
                          ↑ 统一部署到 CCE / K8s 集群
@@ -59,11 +59,11 @@ Export: 数据集导出
 Mobile Agent **不需要额外的 Python 依赖**，只需：
 
 - OpenSandbox Server 已启动（与其他引擎共用）
-- docker-android 镜像已拉取
+- Redroid 镜像已拉取
 
 ```bash
-# 拉取 Android 模拟器镜像
-docker pull budtmo/docker-android:emulator_14.0
+# 拉取 Redroid 镜像
+docker pull redroid/redroid:14.0.0-latest
 ```
 
 ### 2. 宿主机 / CCE 节点要求
@@ -82,7 +82,7 @@ Android 模拟器需要 KVM 硬件虚拟化支持：
 export DEEPSEEK_API_KEY="your-key"
 
 # 可选: 自定义镜像
-export MOBILE_SANDBOX_IMAGE="budtmo/docker-android:emulator_14.0"
+export MOBILE_SANDBOX_IMAGE="redroid/redroid:14.0.0-latest"
 ```
 
 ## 使用方式

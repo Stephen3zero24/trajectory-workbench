@@ -5,7 +5,7 @@ Mobile Agent Pipeline 编排器
 
 完整流程:
   Step 0: 场景加载 → 解析 mobile_scenarios.json → 任务列表
-  Step 1: 通过 OpenSandbox 启动 Android 模拟器沙箱 (docker-android)
+  Step 1: 通过 OpenSandbox 启动 Redroid 容器
   Step 2: VLM 驱动的 Agent 轨迹生成 (截图 → 推理 → ADB 动作)
   Review: 轨迹质量评估
   Export: 导出 SFT/DPO/Raw 格式数据

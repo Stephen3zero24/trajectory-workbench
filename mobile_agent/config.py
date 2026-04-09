@@ -17,13 +17,20 @@ DEEPSEEK_BASE_URL = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.co
 # OpenSandbox 配置（与 envscaler 等引擎共用同一个控制面）
 OPENSANDBOX_SERVER = os.environ.get("OPENSANDBOX_SERVER", "http://127.0.0.1:8080")
 
-# Android 模拟器镜像
-# 默认使用 budtmo/docker-android, 也可替换为自定义镜像
-# 要求: 镜像内有 ADB + Android 模拟器, 且模拟器开机后 ADB 可用
+# Redroid 容器镜像
+# Redroid 在容器内原生运行 Android（非模拟器），启动快、资源省、APP 兼容性好
+# 镜像版本对应 Android 版本: 14.0.0 = Android 14, 12.0.0 = Android 12
+# ARM 翻译层 (libndk_translation) 已内置, x86 主机可运行 ARM APP
 MOBILE_SANDBOX_IMAGE = os.environ.get(
     "MOBILE_SANDBOX_IMAGE",
-    "budtmo/docker-android:emulator_14.0",
+    "redroid/redroid:14.0.0-latest",
 )
+
+# Redroid 显示参数（通过容器启动参数传入）
+REDROID_GPU_MODE = os.environ.get("REDROID_GPU_MODE", "guest")  # guest=CPU软渲染, host=GPU加速
+REDROID_WIDTH = int(os.environ.get("REDROID_WIDTH", "1080"))
+REDROID_HEIGHT = int(os.environ.get("REDROID_HEIGHT", "1920"))
+REDROID_DPI = int(os.environ.get("REDROID_DPI", "480"))
 
 
 # ─── 动作空间 ────────────────────────────────────────────────────────────────
@@ -175,13 +182,17 @@ class MobileAgentPipelineConfig:
     scenario_path: str = ""                 # 场景文件路径
     scenario_filter_tags: list = field(default_factory=list)  # 按标签筛选任务
 
-    # ── Step 1: OpenSandbox + Android 模拟器配置 ──
+    # ── Step 1: OpenSandbox + Redroid 配置 ──
     mobile_image: str = ""                  # Docker 镜像（空=用 MOBILE_SANDBOX_IMAGE 默认值）
     sandbox_timeout: int = 600              # 沙箱总超时秒数
-    emulator_boot_timeout: int = 120        # 模拟器启动超时秒数
+    boot_timeout: int = 30                  # Redroid 启动超时秒数（秒级启动, 无需长等）
     wait_after_action: float = 1.5          # 每次动作后等待秒数（等界面稳定）
     screenshot_format: str = "png"          # png | jpeg
     enable_ui_tree: bool = True             # 是否同时获取 UI hierarchy
+    redroid_gpu_mode: str = "guest"         # guest=CPU 软渲染, host=GPU 加速
+    redroid_width: int = 1080               # 屏幕宽度
+    redroid_height: int = 1920              # 屏幕高度
+    redroid_dpi: int = 480                  # 屏幕 DPI
 
     # ── Step 2: Agent 轨迹生成配置 ──
     agent_model: str = "deepseek-chat"      # LLM 模型
