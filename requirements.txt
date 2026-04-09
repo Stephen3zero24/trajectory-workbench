@@ -27,6 +27,6 @@ mcp>=1.0.0                    # MCP 协议支持
 fastmcp>=3.1.1
 
 # ─── Mobile Agent (Android GUI) 场景 ───
-# AgentScope Runtime 提供 MobileSandbox (Docker 化 Android 模拟器)
-# 安装后还需拉取镜像: docker pull agentscope/runtime-sandbox-mobile:latest
-agentscope-runtime>=1.1.0
+# 通过 OpenSandbox 管理 docker-android 镜像, 无额外 Python 依赖
+# 首次使用需拉取镜像: docker pull budtmo/docker-android:emulator_14.0
+# 宿主机/CCE 节点需支持 KVM (/dev/kvm)

@@ -3,7 +3,7 @@ Mobile Agent 模块集成测试
 
 在 Mock 模式下测试完整 Pipeline 流程:
   Step 0: 场景加载 (内置场景)
-  Step 1: MobileSandbox 启动 (mock)
+  Step 1: Android 沙箱启动 (mock)
   Step 2: Agent 轨迹生成 (需 DEEPSEEK_API_KEY, 否则仅测试非 LLM 部分)
   Review + Export
 
@@ -108,8 +108,8 @@ def test_step0_scene_loading():
 
 
 def test_step1_sandbox_runner():
-    """测试 Step 1: MobileSandbox (Mock 模式)"""
-    print("\n═══ Test Step 1: MobileSandbox 启动 ═══")
+    """测试 Step 1: Android 沙箱 (Mock 模式)"""
+    print("\n═══ Test Step 1: Android 沙箱启动 ═══")
 
     from mobile_agent.sandbox_runner import MobileSandboxRunner
     from mobile_agent.config import MobileAgentPipelineConfig

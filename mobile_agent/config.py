@@ -1,7 +1,7 @@
 """
 Mobile Agent 场景配置模块
 
-管理 MobileSandbox 配置、Agent 提示词、动作空间定义等。
+管理 Android 沙箱配置、Agent 提示词、动作空间定义等。
 """
 
 import os
@@ -14,10 +14,15 @@ from typing import Optional, List
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
 DEEPSEEK_BASE_URL = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
 
-# AgentScope Runtime 配置
-AGENTSCOPE_MOBILE_IMAGE = os.environ.get(
-    "AGENTSCOPE_MOBILE_IMAGE",
-    "agentscope/runtime-sandbox-mobile:latest",
+# OpenSandbox 配置（与 envscaler 等引擎共用同一个控制面）
+OPENSANDBOX_SERVER = os.environ.get("OPENSANDBOX_SERVER", "http://127.0.0.1:8080")
+
+# Android 模拟器镜像
+# 默认使用 budtmo/docker-android, 也可替换为自定义镜像
+# 要求: 镜像内有 ADB + Android 模拟器, 且模拟器开机后 ADB 可用
+MOBILE_SANDBOX_IMAGE = os.environ.get(
+    "MOBILE_SANDBOX_IMAGE",
+    "budtmo/docker-android:emulator_14.0",
 )
 
 
@@ -170,9 +175,10 @@ class MobileAgentPipelineConfig:
     scenario_path: str = ""                 # 场景文件路径
     scenario_filter_tags: list = field(default_factory=list)  # 按标签筛选任务
 
-    # ── Step 1: MobileSandbox 配置 ──
-    mobile_image: str = ""                  # Docker 镜像（空=用默认）
+    # ── Step 1: OpenSandbox + Android 模拟器配置 ──
+    mobile_image: str = ""                  # Docker 镜像（空=用 MOBILE_SANDBOX_IMAGE 默认值）
     sandbox_timeout: int = 600              # 沙箱总超时秒数
+    emulator_boot_timeout: int = 120        # 模拟器启动超时秒数
     wait_after_action: float = 1.5          # 每次动作后等待秒数（等界面稳定）
     screenshot_format: str = "png"          # png | jpeg
     enable_ui_tree: bool = True             # 是否同时获取 UI hierarchy

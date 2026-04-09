@@ -5,8 +5,8 @@ Mobile Agent Pipeline 编排器
 
 完整流程:
   Step 0: 场景加载 → 解析 mobile_scenarios.json → 任务列表
-  Step 1: 启动 MobileSandbox (AgentScope Runtime)
-  Step 2: VLM 驱动的 Agent 轨迹生成 (截图 → 推理 → 动作)
+  Step 1: 通过 OpenSandbox 启动 Android 模拟器沙箱 (docker-android)
+  Step 2: VLM 驱动的 Agent 轨迹生成 (截图 → 推理 → ADB 动作)
   Review: 轨迹质量评估
   Export: 导出 SFT/DPO/Raw 格式数据
 """
@@ -427,8 +427,8 @@ async def run_mobile_pipeline(
 
         emit("step0_done", f"✅ {len(tasks)} 个任务就绪")
 
-        # ════ Step 1: 启动 MobileSandbox ════
-        emit("step1_start", "启动 MobileSandbox")
+        # ════ Step 1: 启动 Android 沙箱 ════
+        emit("step1_start", "启动 Android 沙箱")
         step1_result = await run_step1(
             config=config,
             event_callback=lambda t, m: emit(t, m),
@@ -436,7 +436,7 @@ async def run_mobile_pipeline(
 
         runner = step1_result["runner"]
         emit("step1_done",
-             f"✅ MobileSandbox 就绪 ({step1_result['backend']}): "
+             f"✅ Android 沙箱就绪 ({step1_result['backend']}): "
              f"{step1_result['screen_width']}x{step1_result['screen_height']}")
 
         # ════ Step 2: Agent 轨迹生成 ════
