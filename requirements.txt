@@ -25,3 +25,8 @@ mcp>=1.0.0                    # MCP 协议支持
 # ─── EnvScaler 工具调用场景 ───
 # fastmcp 主要在沙箱内安装, 此处列出供本地开发测试
 fastmcp>=3.1.1
+
+# ─── Mobile Agent (Android GUI) 场景 ───
+# AgentScope Runtime 提供 MobileSandbox (Docker 化 Android 模拟器)
+# 安装后还需拉取镜像: docker pull agentscope/runtime-sandbox-mobile:latest
+agentscope-runtime>=1.1.0

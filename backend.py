@@ -55,6 +55,13 @@ try:
 except ImportError:
     ENVSCALER_AVAILABLE = False
 
+# ─── Mobile Agent 集成 ──────────────────────────────────────────────────────
+try:
+    from mobile_agent.mobile_api import register_mobile_routes
+    MOBILE_AGENT_AVAILABLE = True
+except ImportError:
+    MOBILE_AGENT_AVAILABLE = False
+
 # ─── 配置 ─────────────────────────────────────────────────────────────────────
 
 OPENSANDBOX_SERVER = os.environ.get("OPENSANDBOX_SERVER", "http://127.0.0.1:8080")
@@ -673,6 +680,9 @@ if TOOLACE_AVAILABLE:
 if ENVSCALER_AVAILABLE:
     register_envscaler_routes(app)
 
+if MOBILE_AGENT_AVAILABLE:
+    register_mobile_routes(app)
+
 # ─── API 端点 ──────────────────────────────────────────────────────────────────
 
 @app.get("/api/health")
@@ -960,6 +970,7 @@ async def list_scenes():
         {"id": "envscaler",   "name": "EnvScaler工具调用", "desc": "基于EnvScaler的状态化环境工具调用轨迹合成", "icon": "🏗️"},
         {"id": "mcp_tool",     "name": "MCP工具交互",    "desc": "Agent Harness的MCP交互、工具选择",     "icon": "⚙️"},
         {"id": "toolace",      "name": "ToolACE工具调用", "desc": "基于ToolACE的工具自进化+多轮调用轨迹合成", "icon": "🔧"},
+        {"id": "mobile_agent", "name": "Mobile Agent",   "desc": "基于AgentScope MobileSandbox的Android GUI操控轨迹合成", "icon": "📱"},
         {"id": "gui",          "name": "GUI操作",        "desc": "浏览器/安卓系统GUI操控",              "icon": "🖥️"},
         {"id": "search2qa",    "name": "Search2QA",      "desc": "基于WebExplorer的搜索轨迹驱动QA合成", "icon": "🔍"},
         {"id": "deep_search",  "name": "Deep Search",    "desc": "搜索引擎检索与信息整合",              "icon": "🌐"},
