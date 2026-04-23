@@ -20,6 +20,7 @@ from typing import Callable, Optional
 
 import httpx
 from opensandbox.sandbox import Sandbox
+from opensandbox.models.execd import RunCommandOpts
 from opensandbox.config import ConnectionConfig
 
 # ─── 配置 ─────────────────────────────────────────────────────────────────────
@@ -94,9 +95,9 @@ async def upload_scripts_to_sandbox(sandbox: Sandbox, emit: Callable = None):
 
         # 使用 SDK 的文件写入
         from opensandbox.models import WriteEntry
-        await sandbox.files.write(
+        await sandbox.files.write_file(
             f"/workspace/search2qa/{filename}",
-            WriteEntry(data=content.encode("utf-8"))
+            content.encode("utf-8"),
         )
 
         if emit:
@@ -114,18 +115,29 @@ async def install_dependencies(sandbox: Sandbox, emit: Callable = None):
     # 安装依赖（分批安装避免超时）
     dep_groups = [
         # 搜索相关
-        "pip install duckduckgo-search>=4.1.0",
+        "python3 -m pip install duckduckgo-search>=4.1.0",
         # 爬虫相关
-        "pip install requests beautifulsoup4 lxml trafilatura",
+        "python3 -m pip install requests beautifulsoup4 lxml trafilatura",
         # crawl4ai
-        "pip install crawl4ai>=0.3.0",
+        "python3 -m pip install crawl4ai>=0.3.0",
         # PDF 处理
-        "pip install PyMuPDF pymupdf4llm",
+        "python3 -m pip install PyMuPDF pymupdf4llm",
         # LLM 客户端
-        "pip install openai",
+        "python3 -m pip install openai",
         # 工具类
-        "pip install python-dotenv tqdm",
+        "python3 -m pip install python-dotenv tqdm",
     ]
+
+    # 确保沙箱里有 pip（v1.0.2 镜像移除了 pip）
+    if emit:
+        emit("install", "⚙️  bootstrap pip via ensurepip...")
+    ensurepip_result = await sandbox.commands.run(
+        "python3 -m ensurepip --upgrade",
+        opts=RunCommandOpts(timeout=timedelta(seconds=60)),
+    )
+    ensurepip_err = "\n".join([l.text for l in ensurepip_result.logs.stderr]) if ensurepip_result.logs.stderr else ""
+    if emit:
+        emit("install", "✅ pip ready" if not ensurepip_err else f"⚠️ ensurepip stderr: {ensurepip_err[:200]}")
 
     for cmd in dep_groups:
         if emit:
@@ -133,7 +145,7 @@ async def install_dependencies(sandbox: Sandbox, emit: Callable = None):
 
         result = await sandbox.commands.run(
             cmd,
-            timeout=timedelta(seconds=120),
+            opts=RunCommandOpts(timeout=timedelta(seconds=120)),
         )
         stdout = "\n".join([l.text for l in result.logs.stdout]) if result.logs.stdout else ""
         stderr = "\n".join([l.text for l in result.logs.stderr]) if result.logs.stderr else ""
@@ -147,8 +159,8 @@ async def install_dependencies(sandbox: Sandbox, emit: Callable = None):
         if emit:
             emit("install", "安装 playwright（可选）...")
         await sandbox.commands.run(
-            "pip install playwright && playwright install chromium --with-deps",
-            timeout=timedelta(seconds=180),
+            "python3 -m pip install playwright && playwright install chromium --with-deps",
+            opts=RunCommandOpts(timeout=timedelta(seconds=180)),
         )
     except Exception:
         if emit:
@@ -257,7 +269,7 @@ async def run_search2qa_in_sandbox(
             timeout_minutes = config.get("timeout_minutes", 15)
             result = await sandbox.commands.run(
                 run_cmd,
-                timeout=timedelta(minutes=timeout_minutes),
+                opts=RunCommandOpts(timeout=timedelta(minutes=timeout_minutes)),
             )
 
             stdout = "\n".join([l.text for l in result.logs.stdout]) if result.logs.stdout else ""
