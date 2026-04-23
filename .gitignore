@@ -31,3 +31,6 @@ output/
 
 # Logs
 *.log
+
+# 手动备份文件
+*.bak
