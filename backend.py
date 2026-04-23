@@ -62,6 +62,9 @@ try:
 except ImportError:
     MOBILE_AGENT_AVAILABLE = False
 
+# ─── Trajectory Agent 壳层(A-1)───────────────────────────────────────────────
+from trajectory_agent.router import router as trajectory_agent_router
+
 # ─── 配置 ─────────────────────────────────────────────────────────────────────
 
 OPENSANDBOX_SERVER = os.environ.get("OPENSANDBOX_SERVER", "http://127.0.0.1:8080")
@@ -682,6 +685,8 @@ if ENVSCALER_AVAILABLE:
 
 if MOBILE_AGENT_AVAILABLE:
     register_mobile_routes(app)
+
+app.include_router(trajectory_agent_router)
 
 # ─── API 端点 ──────────────────────────────────────────────────────────────────
 
