@@ -17,7 +17,7 @@ from typing import Optional
 async def search_duckduckgo(query: str, max_results: int = 8) -> str:
     """使用 DuckDuckGo 搜索，返回格式化的搜索结果"""
     try:
-        from duckduckgo_search import DDGS
+        from ddgs import DDGS
         results = []
         with DDGS() as ddgs:
             for r in ddgs.text(query, max_results=max_results):
