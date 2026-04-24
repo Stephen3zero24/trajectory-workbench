@@ -120,7 +120,7 @@ async def run_toucan_pipeline(config, event_callback=None):
 
     # Step 1
     emit("step1_start", "问题合成")
-    questions = run_step1(config, registry)
+    questions = run_step1(registry.list_servers(), config)
     emit("step1_done", f"{len(questions)} 个问题")
     if not questions:
         return {"status": "failed", "error": "No questions"}
