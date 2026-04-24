@@ -21,6 +21,8 @@ from .config import (
     MCPServerInfo,
     DEFAULT_MCP_SERVERS,
     save_mcp_servers_to_file,
+    SmitheryConfig,
+    MCPServerRegistry,
 )
 
 
@@ -166,3 +168,37 @@ def get_tools_summary(servers: list) -> str:
         tools_str = ", ".join(tool_names) if tool_names else "(tools pending discovery)"
         lines.append(f"- [{s.server_id}] {s.name}: {s.description}\n  Tools: {tools_str}")
     return "\n".join(lines)
+
+
+class SmitherySetup:
+    """Smithery MCP Server 发现与注册表构建的门面类。
+
+    封装 discover_smithery_servers 函数和 MCPServerRegistry,
+    为 pipeline 和 api 层提供统一调用入口。
+    """
+
+    def __init__(self, config: SmitheryConfig):
+        self.config = config
+
+    async def build_registry(self, fetch_tools: bool = False) -> MCPServerRegistry:
+        """构建 MCP Server 注册表。
+
+        Args:
+            fetch_tools: True 时走真实 Smithery API 拉取工具定义;
+                        False 时直接返回内置 DEFAULT_MCP_SERVERS(无网络)。
+                        当 config.is_configured 为 False 时,即便 fetch_tools=True
+                        也会 fallback 到 DEFAULT_MCP_SERVERS(复用 discover 函数
+                        内置的兜底逻辑)。
+        """
+        if not fetch_tools:
+            return MCPServerRegistry(servers=list(DEFAULT_MCP_SERVERS))
+        servers = await discover_smithery_servers(api_key=self.config.api_key)
+        return MCPServerRegistry(servers=servers)
+
+    async def save_registry(self, registry: MCPServerRegistry, path: str) -> None:
+        """把注册表持久化到文件。
+
+        注:形式为 async 以匹配 pipeline 里 await 调用姿势,内部实际为
+        同步 IO(委托 MCPServerRegistry.save)。
+        """
+        registry.save(path)

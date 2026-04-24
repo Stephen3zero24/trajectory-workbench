@@ -81,6 +81,36 @@ def test_pipeline_config_nested_roundtrip():
     assert cfg2.agent_llm.model == "qwen-max"
 
 
+import asyncio
+
+
+def test_smithery_setup_fetch_tools_false():
+    """build_registry(fetch_tools=False) 走兜底路径,不触发网络"""
+    from toucan.step0_smithery_setup import SmitherySetup
+    setup = SmitherySetup(SmitheryConfig(api_key=""))
+    registry = asyncio.run(setup.build_registry(fetch_tools=False))
+    assert isinstance(registry, MCPServerRegistry)
+    assert len(registry.servers) > 0
+
+
+def test_smithery_setup_save_registry():
+    """save_registry 能写入文件"""
+    import os
+    import tempfile
+    from toucan.step0_smithery_setup import SmitherySetup
+    setup = SmitherySetup(SmitheryConfig())
+    registry = MCPServerRegistry(servers=[
+        MCPServerInfo(server_id="t", name="T", url="http://x"),
+    ])
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "reg.json")
+        asyncio.run(setup.save_registry(registry, p))
+        assert os.path.exists(p)
+        loaded = MCPServerRegistry.load(p)
+        assert len(loaded.servers) == 1
+        assert loaded.servers[0].server_id == "t"
+
+
 if __name__ == "__main__":
     test_llm_config_defaults()
     test_smithery_config_is_configured()
@@ -88,4 +118,6 @@ if __name__ == "__main__":
     test_pipeline_config_has_three_llms()
     test_pipeline_config_step_fields_present()
     test_pipeline_config_nested_roundtrip()
+    test_smithery_setup_fetch_tools_false()
+    test_smithery_setup_save_registry()
     print("✅ T-1 config schema 冒烟测试全部通过")
