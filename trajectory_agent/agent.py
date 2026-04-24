@@ -5,7 +5,6 @@ import logging
 import uuid
 
 from trajectory_agent.dispatcher import SceneDispatcher
-from trajectory_agent.schemas import SubmitRequest, SubmitResponse
 
 logger = logging.getLogger(__name__)
 
@@ -16,11 +15,12 @@ class TrajectoryAgent:
         self._runs: dict[str, dict] = {}
         self._lock = asyncio.Lock()
 
-    async def submit(self, req: SubmitRequest) -> SubmitResponse:
-        # router 层已校验 scene_hint 非空且为合法枚举值,此处不再兜底
-        assert req.scene_hint, "scene_hint must be validated by router before reaching agent"
-        upstream = await self.dispatcher.dispatch(req.scene_hint, req.params or {})
+    async def dispatch_and_record(self, scene: str, params: dict) -> dict:
+        """dispatch → 记录 agent_run_id 映射 → 返回结构化结果。
 
+        A-2-4 submit 直接调用本方法;A-1 时代的 `submit(req)` 旧方法已废弃删除。
+        """
+        upstream = await self.dispatcher.dispatch(scene, params)
         scene_task_id = upstream.get("task_id") or upstream.get("scene_task_id") or ""
         if not scene_task_id:
             raise RuntimeError(f"upstream response missing task_id: {upstream!r}")
@@ -28,21 +28,21 @@ class TrajectoryAgent:
         agent_run_id = str(uuid.uuid4())
         async with self._lock:
             self._runs[agent_run_id] = {
-                "scene": req.scene_hint,
+                "scene": scene,
                 "scene_task_id": scene_task_id,
             }
 
         logger.info(
-            "submit scene=%s agent_run_id=%s scene_task_id=%s",
-            req.scene_hint, agent_run_id, scene_task_id,
+            "dispatch_and_record scene=%s agent_run_id=%s scene_task_id=%s",
+            scene, agent_run_id, scene_task_id,
         )
-        return SubmitResponse(
-            agent_run_id=agent_run_id,
-            scene=req.scene_hint,
-            scene_task_id=scene_task_id,
-            status=upstream.get("status", "created"),
-            message=upstream.get("message"),
-        )
+        return {
+            "agent_run_id": agent_run_id,
+            "scene": scene,
+            "scene_task_id": scene_task_id,
+            "status": upstream.get("status", "created"),
+            "message": upstream.get("message"),
+        }
 
     async def get_run(self, agent_run_id: str) -> dict | None:
         async with self._lock:
