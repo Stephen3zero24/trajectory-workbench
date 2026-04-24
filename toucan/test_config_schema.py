@@ -111,6 +111,65 @@ def test_smithery_setup_save_registry():
         assert loaded.servers[0].server_id == "t"
 
 
+def test_toucan_api_create_task():
+    """POST /api/toucan/tasks 构造 config 不再 TypeError,
+    且 server_ids 正确映射到 mcp_server_ids"""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from unittest.mock import patch
+    from toucan.toucan_api import register_toucan_routes, toucan_tasks
+
+    app = FastAPI()
+    register_toucan_routes(app)
+    client = TestClient(app)
+
+    with patch("toucan.toucan_api._run_task"):
+        resp = client.post("/api/toucan/tasks", json={
+            "question_count": 3,
+            "server_ids": ["exa", "brave-search"],
+            "model": "deepseek-chat",
+            "temperature": 0.8,
+        })
+    assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+    data = resp.json()
+    assert "task_id" in data
+    assert data["status"] == "created"
+
+    task_id = data["task_id"]
+    stored = toucan_tasks[task_id]
+    cfg_dict = stored["config"]
+    assert cfg_dict["mcp_server_ids"] == ["exa", "brave-search"], \
+        f"mcp_server_ids not mapped: {cfg_dict.get('mcp_server_ids')}"
+    assert cfg_dict["question_llm"]["model"] == "deepseek-chat"
+    assert cfg_dict["quality_llm"]["model"] == "deepseek-chat"
+    assert cfg_dict["agent_llm"]["model"] == "deepseek-chat"
+    assert cfg_dict["question_llm"]["temperature"] == 0.8
+    assert cfg_dict["quality_llm"]["temperature"] == 0.3
+    assert cfg_dict["agent_llm"]["temperature"] == 0.7
+
+    toucan_tasks.pop(task_id, None)
+
+
+def test_toucan_api_server_ids_none():
+    """不传 server_ids 时,mcp_server_ids 应为空列表"""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from unittest.mock import patch
+    from toucan.toucan_api import register_toucan_routes, toucan_tasks
+
+    app = FastAPI()
+    register_toucan_routes(app)
+    client = TestClient(app)
+
+    with patch("toucan.toucan_api._run_task"):
+        resp = client.post("/api/toucan/tasks", json={"question_count": 3})
+    assert resp.status_code == 200
+    task_id = resp.json()["task_id"]
+    cfg_dict = toucan_tasks[task_id]["config"]
+    assert cfg_dict["mcp_server_ids"] == []
+    toucan_tasks.pop(task_id, None)
+
+
 if __name__ == "__main__":
     test_llm_config_defaults()
     test_smithery_config_is_configured()
@@ -120,4 +179,6 @@ if __name__ == "__main__":
     test_pipeline_config_nested_roundtrip()
     test_smithery_setup_fetch_tools_false()
     test_smithery_setup_save_registry()
+    test_toucan_api_create_task()
+    test_toucan_api_server_ids_none()
     print("✅ T-1 config schema 冒烟测试全部通过")
