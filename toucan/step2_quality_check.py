@@ -128,12 +128,12 @@ def evaluate_questions_batch(
 
         try:
             response = client.chat.completions.create(
-                model=config.qc_model,
+                model=config.quality_llm.model,
                 messages=[
                     {"role": "system", "content": "你是问题质量评估专家，请严格按 JSON 格式输出评分。"},
                     {"role": "user", "content": prompt},
                 ],
-                temperature=config.qc_temperature,
+                temperature=config.quality_llm.temperature,
                 max_tokens=1024,
                 stream=False,
             )
