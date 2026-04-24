@@ -127,14 +127,14 @@ async def run_toucan_pipeline(config, event_callback=None):
 
     # Step 2
     emit("step2_start", "质量检查")
-    checked = run_step2(config, registry, questions)
+    checked = run_step2(questions, config)
     emit("step2_done", f"{len(checked)} 个通过")
     if not checked:
         return {"status": "failed", "error": "No questions passed QC"}
 
     # Step 3
     emit("step3_start", "轨迹生成")
-    trajectories = await run_step3(config, registry, checked, event_callback)
+    trajectories = await run_step3(checked, registry.list_servers(), config, event_callback)
     emit("step3_done", f"{len(trajectories)} 条轨迹")
 
     # Review
