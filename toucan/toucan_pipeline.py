@@ -8,6 +8,8 @@ import os
 import time
 from dataclasses import asdict
 
+from openai import OpenAI
+
 from .config import ToucanPipelineConfig, MCPServerRegistry, SmitheryConfig, LLMConfig
 from .step0_smithery_setup import SmitherySetup
 from .step1_question_synthesis import run_step1
@@ -19,14 +21,13 @@ from .step3_trajectory_gen import run_step3, ToucanTrajectory
 
 def review_toucan_trajectory(traj, config):
     """评估 Toucan 轨迹质量"""
-    from openai import OpenAI
     llm = OpenAI(api_key=config.question_llm.api_key, base_url=config.question_llm.base_url)
 
     turns_summary = []
-    for turn in traj.turns:
-        s = {"role": turn.role, "content": turn.content[:200]}
-        if turn.tool_calls:
-            s["tool_calls"] = [{"tool": tc.get("tool_name",""), "success": tc.get("success",False), "output": tc.get("tool_output","")[:100]} for tc in turn.tool_calls]
+    for turn in traj.steps:
+        s = {"role": turn["role"], "content": turn["content"][:200]}
+        if turn.get("tool_calls"):
+            s["tool_calls"] = [{"tool": tc.get("tool_name",""), "success": tc.get("success",False), "output": tc.get("tool_output","")[:100]} for tc in turn["tool_calls"]]
         turns_summary.append(s)
 
     traj_json = json.dumps(turns_summary, ensure_ascii=False, indent=2)[:6000]
@@ -65,12 +66,12 @@ def export_toucan_dataset(trajectories, config, reviews=None):
     with open(sft_path, "w", encoding="utf-8") as f:
         for traj in trajectories:
             messages = [{"role": "system", "content": "你是一个能够使用各种工具的智能助手。"}]
-            for turn in traj.turns:
-                msg = {"role": turn.role, "content": turn.content}
-                if turn.tool_calls:
-                    msg["tool_calls"] = [{"id": tc.get("call_id",""), "type": "function", "function": {"name": tc.get("tool_name",""), "arguments": json.dumps(tc.get("tool_input",{}), ensure_ascii=False)}} for tc in turn.tool_calls]
+            for turn in traj.steps:
+                msg = {"role": turn["role"], "content": turn["content"]}
+                if turn.get("tool_calls"):
+                    msg["tool_calls"] = [{"id": tc.get("call_id",""), "type": "function", "function": {"name": tc.get("tool_name",""), "arguments": json.dumps(tc.get("tool_input",{}), ensure_ascii=False)}} for tc in turn["tool_calls"]]
                 messages.append(msg)
-            f.write(json.dumps({"id": traj.trajectory_id, "messages": messages, "metadata": {"question_id": traj.question_id, "server_ids": traj.server_ids, "tool_calls": traj.total_tool_calls, "multi_turn": traj.is_multi_turn, "score": traj.quality_score}}, ensure_ascii=False) + "\n")
+            f.write(json.dumps({"id": traj.trajectory_id, "messages": messages, "metadata": {"question_id": traj.question_id, "server_ids": traj.target_servers, "tool_calls": traj.total_tool_calls, "multi_turn": traj.subset == "multi-turn", "score": traj.quality_score}}, ensure_ascii=False) + "\n")
     print(f"  SFT: {sft_path}")
 
     # DPO
@@ -82,8 +83,8 @@ def export_toucan_dataset(trajectories, config, reviews=None):
                 ct, cr = scored[i]
                 rt, rr = scored[-(i+1)]
                 if cr.get("overall_score",0) > rr.get("overall_score",0):
-                    chosen = "\n".join(t.content for t in ct.turns if t.role == "assistant" and t.content)[:1000]
-                    rejected = "\n".join(t.content for t in rt.turns if t.role == "assistant" and t.content)[:1000]
+                    chosen = "\n".join(t["content"] for t in ct.steps if t.get("role") == "assistant" and t.get("content"))[:1000]
+                    rejected = "\n".join(t["content"] for t in rt.steps if t.get("role") == "assistant" and t.get("content"))[:1000]
                     f.write(json.dumps({"prompt": ct.question, "chosen": chosen, "rejected": rejected, "chosen_score": cr.get("overall_score",0), "rejected_score": rr.get("overall_score",0)}, ensure_ascii=False) + "\n")
         print(f"  DPO: {dpo_path}")
 
@@ -160,7 +161,7 @@ async def run_toucan_pipeline(config, event_callback=None):
         "total_tool_calls": sum(t.total_tool_calls for t in trajectories),
         "total_tokens": sum(t.total_tokens for t in trajectories),
         "avg_quality": round(avg_score, 3),
-        "multi_turn": sum(1 for t in trajectories if t.is_multi_turn),
+        "multi_turn": sum(1 for t in trajectories if t.subset == "multi-turn"),
         "output_dir": config.output_dir,
     }
     emit("pipeline_done", f"完成 | {elapsed:.1f}s | avg={avg_score:.3f}")

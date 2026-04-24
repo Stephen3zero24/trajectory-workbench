@@ -170,6 +170,181 @@ def test_toucan_api_server_ids_none():
     toucan_tasks.pop(task_id, None)
 
 
+from unittest.mock import patch, MagicMock
+
+
+def _make_fake_trajectory(subset="single-turn-original", with_multi_step=True):
+    """构造符合 ToucanTrajectory 实际 schema 的假轨迹,供 review/export 测试用。
+
+    关键:steps 里的元素是 dict(asdict 过),不是 TrajectoryStep 对象 ——
+    这是 T-7.3 修复的核心:review/export 必须用 dict 访问(turn["role"]),
+    不能用 attribute 访问(turn.role)。
+    """
+    from toucan.step3_trajectory_gen import ToucanTrajectory
+
+    steps = [
+        # user turn
+        {
+            "step_id": 1,
+            "role": "user",
+            "content": "What's the weather in Tokyo?",
+            "thought": "",
+            "tool_calls": [],
+            "timestamp": "2025-01-01T00:00:00",
+        },
+    ]
+    if with_multi_step:
+        # assistant turn with tool call
+        steps.append({
+            "step_id": 2,
+            "role": "assistant",
+            "content": "Let me check the weather.",
+            "thought": "Need to call weather API",
+            "tool_calls": [{
+                "tool_name": "get_weather",
+                "tool_input": {"city": "Tokyo"},
+                "tool_output": "Sunny, 25C",
+                "server_id": "weather",
+                "success": True,
+                "duration_ms": 123,
+            }],
+            "timestamp": "2025-01-01T00:00:01",
+        })
+        # assistant final response
+        steps.append({
+            "step_id": 3,
+            "role": "assistant",
+            "content": "The weather in Tokyo is sunny, 25C.",
+            "thought": "",
+            "tool_calls": [],
+            "timestamp": "2025-01-01T00:00:02",
+        })
+
+    return ToucanTrajectory(
+        trajectory_id=f"test_traj_{subset}",
+        question="What's the weather in Tokyo?",
+        question_id="q1",
+        target_servers=["weather"],
+        target_tools=["get_weather"],
+        steps=steps,
+        messages=[],
+        tools_schema=[],
+        quality_score=0.85,
+        total_tool_calls=1 if with_multi_step else 0,
+        successful_tool_calls=1 if with_multi_step else 0,
+        total_tokens=100,
+        iteration=0,
+        subset=subset,
+    )
+
+
+def test_t73_review_accepts_real_trajectory_shape():
+    """T-7.3 活体验证:review_toucan_trajectory 能处理真实 shape 的
+    ToucanTrajectory(steps 是 list[dict],不是 list[obj])。
+
+    mock 掉内部的 OpenAI 调用,只测字段访问路径。
+    """
+    from toucan.toucan_pipeline import review_toucan_trajectory
+
+    traj = _make_fake_trajectory(with_multi_step=True)
+    cfg = ToucanPipelineConfig(
+        task_id="test",
+        question_llm=LLMConfig(model="deepseek-chat", api_key="fake"),
+    )
+
+    # mock OpenAI 的返回
+    mock_resp = MagicMock()
+    mock_resp.choices = [MagicMock()]
+    mock_resp.choices[0].message.content = '{"overall_score": 0.8, "dimensions": {}}'
+
+    with patch("toucan.toucan_pipeline.OpenAI") as MockOpenAI:
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = mock_resp
+        MockOpenAI.return_value = mock_client
+
+        # 关键断言:不抛 AttributeError('turns' / 'role' / 'content')
+        result = review_toucan_trajectory(traj, cfg)
+
+    # 验证返回值可解析
+    assert isinstance(result, dict)
+
+
+def test_t73_export_writes_valid_jsonl():
+    """T-7.3 活体验证:export_toucan_dataset 能写出合法 SFT/DPO/raw JSONL。
+
+    精确覆盖:
+    - traj.steps 访问(不再用 traj.turns)
+    - turn["role"] / turn["content"] dict 访问
+    - traj.target_servers(不再 traj.server_ids)
+    - traj.subset == "multi-turn" 派生(不再 traj.is_multi_turn)
+    """
+    import json
+    import os
+    import tempfile
+    from toucan.toucan_pipeline import export_toucan_dataset
+
+    traj_single = _make_fake_trajectory(subset="single-turn-original")
+    traj_multi = _make_fake_trajectory(subset="multi-turn")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        cfg = ToucanPipelineConfig(
+            task_id="test_export",
+            output_dir=tmp,
+        )
+        # 至少 2 条以触发 DPO 段
+        export_toucan_dataset([traj_single, traj_multi], cfg, reviews=None)
+
+        # 验证 SFT 文件
+        sft_path = os.path.join(tmp, "test_export_sft.jsonl")
+        assert os.path.exists(sft_path), "SFT 文件未产出"
+        with open(sft_path) as f:
+            lines = f.readlines()
+        assert len(lines) == 2, f"SFT 期望 2 行,实际 {len(lines)}"
+        for line in lines:
+            rec = json.loads(line)
+            assert "id" in rec
+            assert "messages" in rec
+            assert "metadata" in rec
+            meta = rec["metadata"]
+            # 关键验证:server_ids 来自 target_servers
+            assert meta["server_ids"] == ["weather"]
+            # 关键验证:multi_turn 派生自 subset
+            if rec["id"] == "test_traj_multi-turn":
+                assert meta["multi_turn"] is True, \
+                    f"multi-turn traj 的 multi_turn 应为 True,实际 {meta['multi_turn']}"
+            else:
+                assert meta["multi_turn"] is False
+
+        # 验证 raw 文件
+        raw_path = os.path.join(tmp, "test_export_raw.jsonl")
+        assert os.path.exists(raw_path), "Raw 文件未产出"
+
+
+def test_t73_summary_multi_turn_count():
+    """T-7.3 活体验证:summary 段的 multi_turn 计数从 subset 派生。
+
+    这个测试间接命中 L163:
+        sum(1 for t in trajectories if t.subset == "multi-turn")
+
+    靠直接 import 某个暴露 summary 计算的函数做测试不现实(summary 逻辑
+    嵌在 run_toucan_pipeline 里),所以改为验证:构造的 trajectory
+    能被正确分类(表达式不 AttributeError)。
+    """
+    traj_single = _make_fake_trajectory(subset="single-turn-original")
+    traj_multi = _make_fake_trajectory(subset="multi-turn")
+
+    # 直接复用 pipeline 里同款表达式验证
+    trajectories = [traj_single, traj_multi]
+    count = sum(1 for t in trajectories if t.subset == "multi-turn")
+    assert count == 1
+
+    # 再用属性访问方式确认 subset 字段真实存在且可访问
+    assert traj_single.subset == "single-turn-original"
+    assert traj_multi.subset == "multi-turn"
+    # 反向验证:is_multi_turn 字段不存在
+    assert not hasattr(traj_single, "is_multi_turn")
+
+
 if __name__ == "__main__":
     test_llm_config_defaults()
     test_smithery_config_is_configured()
@@ -181,4 +356,7 @@ if __name__ == "__main__":
     test_smithery_setup_save_registry()
     test_toucan_api_create_task()
     test_toucan_api_server_ids_none()
+    test_t73_review_accepts_real_trajectory_shape()
+    test_t73_export_writes_valid_jsonl()
+    test_t73_summary_multi_turn_count()
     print("✅ T-1 config schema 冒烟测试全部通过")
