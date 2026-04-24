@@ -174,9 +174,14 @@ async def run_toucan_pipeline(config, event_callback=None):
 
 if __name__ == "__main__":
     cfg = ToucanPipelineConfig(
-        task_id="toucan_demo", question_count=10,
-        sampling_strategy="uniform", server_mode="single",
-        quality_threshold=0.6, max_steps=10,
-        enable_multi_turn=False, max_iterations=1,
+        task_id="toucan_demo",
+        output_dir="output/toucan/toucan_demo",
+        question_count=10,
+        sampling_strategy="uniform",
+        server_mode="single",
+        qc_min_score=0.6,
+        max_steps=10,
+        enable_multi_turn=False,
+        max_iterations=1,
     )
     asyncio.run(run_toucan_pipeline(cfg))
