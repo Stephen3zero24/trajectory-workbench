@@ -22,7 +22,7 @@ from .config import (
     DEEPSEEK_BASE_URL,
     SAMPLING_STRATEGIES,
 )
-from .step0_smithery import get_tools_summary
+from .step0_smithery_setup import get_tools_summary
 
 
 # ─── 数据结构 ──────────────────────────────────────────────────────────────────
