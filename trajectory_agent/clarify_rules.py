@@ -1,7 +1,6 @@
 """Clarify 规则硬编码 —— A-2-3b 阶段的场景澄清规则。
 
 本文件硬编码 clarify 规则;B 阶段会搬到平台侧 Skill manifest。
-search2qa qa_mode key 不一致问题见 issue #1,本阶段不处理。
 
 仅支持 search2qa 和 toolace 两个场景;toucan 端点未注册(import 失败),
 A-2-3b 阶段不纳入 router / clarifier 词汇表。
