@@ -311,10 +311,10 @@ async def generate_single_turn_trajectory(
 
         try:
             response = client.chat.completions.create(
-                model=config.agent_model,
+                model=config.agent_llm.model,
                 messages=messages,
                 tools=tools_schema if tools_schema else None,
-                temperature=config.agent_temperature,
+                temperature=config.agent_llm.temperature,
                 max_tokens=2048,
                 stream=False,
             )
@@ -371,7 +371,7 @@ async def generate_single_turn_trajectory(
                         server_url=server_url,
                         tool_name=tool_name,
                         arguments=func_args,
-                        api_key=config.smithery_api_key,
+                        api_key=config.smithery.api_key,
                     )
 
                     tool_call_record = ToolCall(
@@ -485,7 +485,7 @@ async def expand_to_multi_turn(
 
     try:
         resp = client.chat.completions.create(
-            model=config.agent_model,
+            model=config.agent_llm.model,
             messages=[{"role": "user", "content": followup_prompt}],
             temperature=0.8,
             max_tokens=512,
@@ -523,10 +523,10 @@ async def expand_to_multi_turn(
         for sub_step in range(3):
             try:
                 response = client.chat.completions.create(
-                    model=config.agent_model,
+                    model=config.agent_llm.model,
                     messages=messages,
                     tools=tools_schema if tools_schema else None,
-                    temperature=config.agent_temperature,
+                    temperature=config.agent_llm.temperature,
                     max_tokens=2048,
                 )
 
@@ -572,7 +572,7 @@ async def expand_to_multi_turn(
                             server_url=server_url,
                             tool_name=tool_name,
                             arguments=func_args,
-                            api_key=config.smithery_api_key,
+                            api_key=config.smithery.api_key,
                         )
 
                         step_tool_calls.append(ToolCall(

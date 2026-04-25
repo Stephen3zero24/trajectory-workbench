@@ -37,3 +37,6 @@ output/
 
 # 开发期笔记(阶段性核查 / 契约摘要等,非正式文档)
 docs/
+
+# Toucan 运行时产物(pipeline 自动生成的 MCP server 注册表)
+toucan/mcp_servers/registry.json

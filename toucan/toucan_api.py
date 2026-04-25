@@ -66,17 +66,23 @@ def register_toucan_routes(app):
     @app.post("/api/toucan/tasks")
     async def create_toucan_task(req: ToucanTaskRequest, bg: BackgroundTasks):
         task_id = f"toucan_{uuid.uuid4().hex[:8]}"
-        llm = LLMConfig(model=req.model, temperature=req.temperature)
         config = ToucanPipelineConfig(
-            task_id=task_id, smithery=SmitheryConfig(),
-            question_count=req.question_count, sampling_strategy=req.sampling_strategy,
-            server_mode=req.server_mode, max_tools_per_question=req.max_tools_per_question,
+            task_id=task_id,
+            smithery=SmitheryConfig(),
+            question_count=req.question_count,
+            sampling_strategy=req.sampling_strategy,
+            server_mode=req.server_mode,
+            max_tools_per_question=req.max_tools_per_question,
             quality_threshold=req.quality_threshold,
-            question_llm=llm, quality_llm=LLMConfig(model=req.model, temperature=0.3),
-            max_steps=req.max_steps, enable_multi_turn=req.enable_multi_turn,
+            question_llm=LLMConfig(model=req.model, temperature=req.temperature),
+            quality_llm=LLMConfig(model=req.model, temperature=0.3),
+            agent_llm=LLMConfig(model=req.model, temperature=0.7),
+            max_steps=req.max_steps,
+            enable_multi_turn=req.enable_multi_turn,
             multi_turn_max_rounds=req.multi_turn_max_rounds,
             max_iterations=req.max_iterations,
             output_dir=f"output/toucan/{task_id}",
+            mcp_server_ids=req.server_ids or [],
         )
         toucan_tasks[task_id] = {"task_id": task_id, "status": "created", "config": config.to_dict(), "current_step": "init", "summary": {}, "created_at": datetime.now().isoformat()}
         toucan_events[task_id] = []

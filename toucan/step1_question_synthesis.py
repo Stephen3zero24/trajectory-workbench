@@ -22,7 +22,7 @@ from .config import (
     DEEPSEEK_BASE_URL,
     SAMPLING_STRATEGIES,
 )
-from .step0_smithery import get_tools_summary
+from .step0_smithery_setup import get_tools_summary
 
 
 # ─── 数据结构 ──────────────────────────────────────────────────────────────────
@@ -160,17 +160,17 @@ def generate_questions_llm(
     Returns:
         list[GeneratedQuestion]: 生成的问题列表
     """
-    api_key = config.smithery_api_key or DEEPSEEK_API_KEY
+    api_key = config.smithery.api_key or DEEPSEEK_API_KEY
     client = OpenAI(api_key=api_key or DEEPSEEK_API_KEY, base_url=DEEPSEEK_BASE_URL)
 
     try:
         response = client.chat.completions.create(
-            model=config.question_model,
+            model=config.question_llm.model,
             messages=[
                 {"role": "system", "content": "你是一个工具使用问题生成专家。请严格按要求输出 JSON。"},
                 {"role": "user", "content": prompt},
             ],
-            temperature=config.question_temperature,
+            temperature=config.question_llm.temperature,
             max_tokens=4096,
             stream=False,
         )
@@ -330,7 +330,7 @@ def run_step1(
         multi_server=config.multi_server,
     )
 
-    emit(f"[Step 1.2] 调用 {config.question_model} 生成 {config.question_count} 个问题...")
+    emit(f"[Step 1.2] 调用 {config.question_llm.model} 生成 {config.question_count} 个问题...")
     questions = generate_questions_llm(prompt, config)
     emit(f"  生成了 {len(questions)} 个原始问题")
 
