@@ -80,14 +80,24 @@ def _skill(
     sig_owner: str = "trajectory-synthesis",
     status: str = "active",
     description: str = "(无描述)",
+    must_clarify: list[dict] | None = None,
+    defaults: dict | None = None,
+    required_params: list[str] | None = None,
 ) -> dict:
-    return {
+    out = {
         "skill_id": skill_id,
         "sig_owner": sig_owner,
         "status": status,
         "description": description,
         "trigger_keywords": ["dummy"],
     }
+    if must_clarify is not None:
+        out["must_clarify"] = must_clarify
+    if defaults is not None:
+        out["defaults"] = defaults
+    if required_params is not None:
+        out["required_params"] = required_params
+    return out
 
 
 # ---------- 成功路径 ----------
@@ -95,12 +105,47 @@ def _skill(
 
 @pytest.mark.asyncio
 async def test_load_manifests_filters_to_active_trajectory_skills(monkeypatch):
-    """2 active(search2qa, toucan)+ 3 stub → catalog 只含 2 个 active,key 是裸 scene 名。"""
+    """2 active(search2qa, toucan)+ 3 stub → catalog 只含 2 个 active,key 是裸 scene 名。
+
+    T2-2 扩展:同时验证 must_clarify / defaults / required_params 字段进缓存。
+    """
+    search2qa_must_clarify = [
+        {
+            "param": "qa_mode",
+            "question": "你希望的合成模式是？",
+            "options": [
+                {"value": "question", "label": "Q 模式", "hint": "种子词 → 问题"},
+                {"value": "answer", "label": "A 模式", "hint": "答案 → 问题"},
+            ],
+        },
+        {
+            "param": "_scale_preset",
+            "question": "合成规模？",
+            "options": [
+                {
+                    "value": "fast",
+                    "label": "快速",
+                    "hint": "1 样本",
+                    "maps_to": {"max_samples": 1},
+                },
+            ],
+        },
+    ]
+    search2qa_defaults = {
+        "max_turns": 20,
+        "model": "deepseek-chat",
+        "temperature": 0.7,
+    }
+    search2qa_required = ["seed", "qa_mode"]
+
     payload = _platform_payload(
         [
             _skill(
                 skill_id="trajectory-search2qa",
                 description="搜索问答数据合成",
+                must_clarify=search2qa_must_clarify,
+                defaults=search2qa_defaults,
+                required_params=search2qa_required,
             ),
             _skill(
                 skill_id="trajectory-toucan",
@@ -132,6 +177,136 @@ async def test_load_manifests_filters_to_active_trajectory_skills(monkeypatch):
     assert catalog["search2qa"].scene_id == "search2qa"
     assert catalog["search2qa"].description == "搜索问答数据合成"
     assert catalog["toucan"].description == "MCP 工具调用轨迹合成"
+
+    # T2-2 新字段断言 — search2qa
+    s2qa = catalog["search2qa"]
+    assert isinstance(s2qa.must_clarify, tuple)
+    assert len(s2qa.must_clarify) == 2
+    assert s2qa.must_clarify[0]["param"] == "qa_mode"
+    assert isinstance(s2qa.must_clarify[0]["options"], tuple)
+    assert s2qa.must_clarify[0]["options"][0]["value"] == "question"
+    # _scale_preset 第二个 must_clarify 项,maps_to 必须保留
+    assert s2qa.must_clarify[1]["param"] == "_scale_preset"
+    assert s2qa.must_clarify[1]["options"][0]["maps_to"] == {"max_samples": 1}
+
+    assert s2qa.defaults == search2qa_defaults
+    assert s2qa.defaults is not search2qa_defaults  # loader 内部 dict() 复制,不共享引用
+    assert s2qa.required_params == ("seed", "qa_mode")
+    assert isinstance(s2qa.required_params, tuple)
+
+    # toucan 没在 mock 里给三字段 → 应当 graceful 默认空
+    toucan = catalog["toucan"]
+    assert toucan.must_clarify == ()
+    assert toucan.defaults == {}
+    assert toucan.required_params == ()
+
+
+@pytest.mark.asyncio
+async def test_load_manifests_handles_must_clarify_missing(monkeypatch):
+    """manifest 完全缺失 must_clarify / defaults / required_params 三字段 → graceful 默认。"""
+    payload = _platform_payload(
+        [_skill(skill_id="trajectory-search2qa", description="x")]
+    )
+    _patch_httpx(monkeypatch, _FakeResponse(body=payload))
+
+    await loader.load_manifests()
+
+    entry = loader.get_loaded_catalog()["search2qa"]
+    assert entry.must_clarify == ()
+    assert entry.defaults == {}
+    assert entry.required_params == ()
+
+
+@pytest.mark.asyncio
+async def test_load_manifests_handles_must_clarify_malformed(monkeypatch):
+    """manifest must_clarify 元素非 dict / options 非 list → graceful 跳过 / 转空。"""
+    payload = _platform_payload(
+        [
+            _skill(
+                skill_id="trajectory-search2qa",
+                description="x",
+                must_clarify=[
+                    "not_a_dict",
+                    {"param": "valid", "question": "Q?", "options": "not_a_list"},
+                    {"param": "good", "question": "Q?", "options": [{"value": "v"}]},
+                ],
+            )
+        ]
+    )
+    _patch_httpx(monkeypatch, _FakeResponse(body=payload))
+
+    await loader.load_manifests()
+
+    must_clarify = loader.get_loaded_catalog()["search2qa"].must_clarify
+    # 字符串元素跳过,剩两个 dict 项
+    assert len(must_clarify) == 2
+    # options 非 list 的项,options 转为空 tuple
+    assert must_clarify[0]["param"] == "valid"
+    assert must_clarify[0]["options"] == ()
+    # 正常项 options 转 tuple
+    assert must_clarify[1]["param"] == "good"
+    assert isinstance(must_clarify[1]["options"], tuple)
+    assert must_clarify[1]["options"][0]["value"] == "v"
+
+
+@pytest.mark.asyncio
+async def test_load_manifests_preserves_complex_nested_defaults(monkeypatch):
+    """defaults 含嵌套 dict / list / 各种 primitive,必须原样透传不丢精度。"""
+    complex_defaults = {
+        "max_turns": 20,
+        "model": "deepseek-chat",
+        "temperature": 0.7,
+        "enable_evolution": True,
+        "max_samples": 1,
+        "quality_threshold": 0.75,
+        "nested_config": {
+            "sub_a": [1, 2, 3],
+            "sub_b": {"deep": "value"},
+            "sub_c": None,
+        },
+        "tags": ["a", "b", "c"],
+    }
+    payload = _platform_payload(
+        [
+            _skill(
+                skill_id="trajectory-search2qa",
+                description="x",
+                defaults=complex_defaults,
+            )
+        ]
+    )
+    _patch_httpx(monkeypatch, _FakeResponse(body=payload))
+
+    await loader.load_manifests()
+
+    defaults = loader.get_loaded_catalog()["search2qa"].defaults
+    assert defaults == complex_defaults
+    # 嵌套也要全等(同时不丢精度,float / bool / None / list 都正确)
+    assert defaults["temperature"] == 0.7
+    assert defaults["enable_evolution"] is True
+    assert defaults["nested_config"]["sub_b"]["deep"] == "value"
+    assert defaults["nested_config"]["sub_c"] is None
+    assert defaults["tags"] == ["a", "b", "c"]
+
+
+@pytest.mark.asyncio
+async def test_load_manifests_required_params_filters_non_str(monkeypatch):
+    """required_params 中混入非 str(int / dict)→ 仅 str 元素保留。"""
+    payload = _platform_payload(
+        [
+            _skill(
+                skill_id="trajectory-search2qa",
+                description="x",
+                required_params=["seed", 42, {"x": 1}, "qa_mode"],
+            )
+        ]
+    )
+    _patch_httpx(monkeypatch, _FakeResponse(body=payload))
+
+    await loader.load_manifests()
+
+    rp = loader.get_loaded_catalog()["search2qa"].required_params
+    assert rp == ("seed", "qa_mode")
 
 
 @pytest.mark.asyncio

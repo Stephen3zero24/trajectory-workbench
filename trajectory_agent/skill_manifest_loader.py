@@ -1,13 +1,24 @@
 """Skill Manifest Loader — 启动期从平台 /api/skills 拉 manifest 喂给 scene_router / clarifier。
 
-数据流(T2-1 落地形态):
+数据流(T2-2 落地形态):
     平台 skills/<dir>/manifest.json
         ↓  Next.js GET /api/skills 扫盘拼装(顶层 {"skills": [...]} dict)
         ↓  本模块 load_manifests() 启动期一次性 HTTP 拉取
         ↓  过滤 sig_owner=="trajectory-synthesis" + status=="active"
         ↓  strip "trajectory-" 前缀 → 裸 scene_id
         ↓  module-level 缓存 _CATALOG: dict[scene_id, SceneCatalogEntry]
-        ↓  scene_router.get_loaded_catalog() / get_supported_scenes() 统一入口
+        ↓  scene_router.get_loaded_catalog() / get_supported_scenes() 消费
+           description(决策语义)
+        ↓  clarifier.get_loaded_catalog() 消费 must_clarify / defaults /
+           required_params(参数澄清 + 默认合并 + manifest 必填校验)
+
+SceneCatalogEntry 字段(T2-2 扩):
+- scene_id / description:T2-1 已有
+- must_clarify:tuple[dict, ...],外层 tuple 不可变;每个 item 保持 dict
+  但其 options 子字段已转 tuple
+- defaults:dict,完整透传 manifest defaults。dict 实例本身可变,但消费方
+  约定**只读**,任何修改请先 dict() 复制
+- required_params:tuple[str, ...],manifest 声明的必填参数集
 
 哲学:fail-fast。
 - 启动期拉不到 manifest(平台离线 / 5xx / 非 JSON / 0 个 active)→ 抛异常,
@@ -24,7 +35,8 @@
 
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 import httpx
 
@@ -41,6 +53,44 @@ HTTP_TIMEOUT_SECONDS = 5.0
 class SceneCatalogEntry:
     scene_id: str
     description: str
+    must_clarify: tuple[dict, ...] = ()
+    defaults: dict = field(default_factory=dict)
+    required_params: tuple[str, ...] = ()
+
+
+def _normalize_must_clarify(raw: Any) -> tuple[dict, ...]:
+    """list[dict] → tuple[dict],其中每个 dict 的 options 也转 tuple。
+
+    非 list / 非 dict item / options 非 list 等异常形态全部 graceful 跳过。
+    """
+    if not isinstance(raw, list):
+        return ()
+    out: list[dict] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        normalized = dict(item)
+        opts = normalized.get("options")
+        if isinstance(opts, list):
+            normalized["options"] = tuple(
+                dict(o) for o in opts if isinstance(o, dict)
+            )
+        else:
+            normalized["options"] = ()
+        out.append(normalized)
+    return tuple(out)
+
+
+def _normalize_required_params(raw: Any) -> tuple[str, ...]:
+    if not isinstance(raw, list):
+        return ()
+    return tuple(v for v in raw if isinstance(v, str))
+
+
+def _normalize_defaults(raw: Any) -> dict:
+    if not isinstance(raw, dict):
+        return {}
+    return dict(raw)
 
 
 class SkillManifestUnavailable(Exception):
@@ -107,7 +157,11 @@ async def load_manifests() -> None:
         if not isinstance(description, str):
             continue
         catalog[scene_id] = SceneCatalogEntry(
-            scene_id=scene_id, description=description
+            scene_id=scene_id,
+            description=description,
+            must_clarify=_normalize_must_clarify(s.get("must_clarify")),
+            defaults=_normalize_defaults(s.get("defaults")),
+            required_params=_normalize_required_params(s.get("required_params")),
         )
 
     if not catalog:
