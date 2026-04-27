@@ -36,7 +36,11 @@ output/
 *.bak
 
 # 开发期笔记(阶段性核查 / 契约摘要等,非正式文档)
-docs/
+# 用 docs/* 而非 docs/(目录级排除会让后续 negation 失效)
+docs/*
+
+# 但 T2 系列 smoke validation log 是 commit 硬证据,需入 git
+!docs/T2-*-smoke-log.md
 
 # Toucan 运行时产物(pipeline 自动生成的 MCP server 注册表)
 toucan/mcp_servers/registry.json
