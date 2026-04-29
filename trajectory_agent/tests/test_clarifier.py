@@ -57,6 +57,14 @@ def _qa_mode_item() -> dict:
     }
 
 
+def _seed_item() -> dict:
+    return {
+        "param": "seed",
+        "question": "请提供搜索种子词——通常是一个领域或主题(例如:医疗问诊)",
+        "options": (),
+    }
+
+
 @pytest.fixture
 def search2qa_entry():
     """覆盖 conftest 默认 catalog,模拟 search2qa 完整 manifest 形态。"""
@@ -78,13 +86,13 @@ def search2qa_entry():
 
 @pytest.fixture
 def search2qa_with_unmet_required():
-    """seed 在 required_params 但既不在 must_clarify 也不在 defaults。"""
+    """seed 同时在 must_clarify(free_text)和 required_params;LLM 返 null → clarify_needed。"""
     entry = SceneCatalogEntry(
         scene_id="search2qa",
         description="搜索问答数据合成",
-        must_clarify=(_qa_mode_item(), _scale_preset_item()),
+        must_clarify=(_seed_item(), _qa_mode_item(), _scale_preset_item()),
         defaults={"max_turns": 20},
-        required_params=("seed", "qa_mode"),  # seed 没人喂
+        required_params=("seed", "qa_mode"),
     )
     loader._CATALOG = {"search2qa": entry}
     yield entry
@@ -312,16 +320,52 @@ async def test_extracted_overrides_defaults_for_same_key(search2qa_entry):
 
 
 @pytest.mark.asyncio
-async def test_required_params_missing_raises_clarifier_invalid(
+async def test_clarify_returns_clarify_needed_when_free_text_seed_missing(
     search2qa_with_unmet_required,
 ):
-    """seed 在 required_params 但无人产生 → ClarifierInvalid。"""
-    client = _llm_returning({"qa_mode": "question", "_scale_preset": "fast"})
+    """seed 在 must_clarify(free_text)+required_params,LLM 返 null → clarify_needed(不抛 ClarifierInvalid)。"""
+    client = _llm_returning({"seed": None, "qa_mode": "question", "_scale_preset": "fast"})
 
-    with pytest.raises(ClarifierInvalid) as exc_info:
-        await clarify("test", "search2qa", client)
-    assert "required by manifest" in str(exc_info.value)
-    assert "seed" in str(exc_info.value)
+    outcome = await clarify("test", "search2qa", client)
+
+    assert outcome.status == "questions"
+    field_names = [q["field_name"] for q in outcome.questions]
+    assert "seed" in field_names
+    seed_q = next(q for q in outcome.questions if q["field_name"] == "seed")
+    assert seed_q["type"] == "free_text"
+
+
+@pytest.mark.asyncio
+async def test_clarify_extracts_free_text_seed_when_user_provides_domain(
+    search2qa_with_unmet_required,
+):
+    """用户消息含明显领域词 → LLM 返 seed 值 → ready,params 含 seed。"""
+    client = _llm_returning(
+        {"seed": "医疗问诊", "qa_mode": "question", "_scale_preset": "fast"}
+    )
+
+    outcome = await clarify("请为我合成医疗问诊领域的数据", "search2qa", client)
+
+    assert outcome.status == "ready"
+    assert outcome.params["seed"] == "医疗问诊"
+    assert outcome.params["qa_mode"] == "question"
+
+
+@pytest.mark.asyncio
+async def test_clarify_returns_clarify_needed_when_free_text_extraction_fails(
+    search2qa_with_unmet_required,
+):
+    """用户消息无领域词 → LLM 返 seed null → clarify_needed,questions 含 seed。"""
+    client = _llm_returning(
+        {"seed": None, "qa_mode": "answer", "_scale_preset": "standard"}
+    )
+
+    outcome = await clarify("给我合成一些数据", "search2qa", client)
+
+    assert outcome.status == "questions"
+    field_names = [q["field_name"] for q in outcome.questions]
+    assert "seed" in field_names
+    assert "qa_mode" not in field_names
 
 
 @pytest.mark.asyncio

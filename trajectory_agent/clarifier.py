@@ -75,25 +75,30 @@ def _build_extract_prompt(entry: SceneCatalogEntry) -> str:
         options = item.get("options", ())
         schema_keys.append(param)
 
-        opt_lines: list[str] = []
-        for opt in options:
-            value = opt.get("value", "")
-            label = opt.get("label", "")
-            hint = opt.get("hint", "")
-            line = f'    * "{value}" ({label})'
-            if hint:
-                line += f": {hint}"
-            opt_lines.append(line)
-        opts_block = "\n".join(opt_lines)
-
-        field_blocks.append(f"- {param}: {question}\n{opts_block}")
+        if options:
+            opt_lines: list[str] = []
+            for opt in options:
+                value = opt.get("value", "")
+                label = opt.get("label", "")
+                hint = opt.get("hint", "")
+                line = f'    * "{value}" ({label})'
+                if hint:
+                    line += f": {hint}"
+                opt_lines.append(line)
+            opts_block = "\n".join(opt_lines)
+            field_blocks.append(f"- [enum] {param}: {question}\n{opts_block}")
+        else:
+            field_blocks.append(
+                f"- [free_text] {param}: {question}\n"
+                f"  (从用户需求中抽取领域关键词或主题词,无法识别返 null)"
+            )
 
     fields_section = "\n\n".join(field_blocks)
     schema_entries = ",\n  ".join(f'"{k}": <value_or_null>' for k in schema_keys)
 
-    return f"""你是参数抽取助手,根据用户的数据合成需求,从下面给出的 enum 选项中匹配每个字段。
+    return f"""你是参数抽取助手,根据用户的数据合成需求,从用户表述中抽取每个字段的取值——枚举字段从给定选项中匹配,自由文本字段从用户表述中提取关键词。无法判断的字段返回 null。
 
-字段与选项:
+字段:
 {fields_section}
 
 匹配规则:
@@ -111,6 +116,11 @@ def _build_extract_prompt(entry: SceneCatalogEntry) -> str:
 - 用户提到"答案"/"反推"/"已有答案"/"反向" → 选 answer
 - 不能确定 → 返回 null
 
+判别指引(适用 seed 等 free_text 字段):
+- 用户提到具体领域/主题词("医疗问诊"/"法律咨询"/"电商客服"等)→ 抽取该词
+- 用户只说"合成数据"未提领域 → 返回 null
+- 抽取结果保留中文/英文原词,不翻译,不缩写
+
 输出要求(严格 JSON,不要任何额外文字):
 {{
   {schema_entries}
@@ -123,6 +133,14 @@ def _build_extract_prompt(entry: SceneCatalogEntry) -> str:
 示例 2:
 用户:给我合成一些工具调用数据
 输出:{{"_scale_preset": "standard"}}
+
+示例 3:
+用户:我想做点法律咨询方向的训练数据,数量不用太多
+输出:{{"seed": "法律咨询", "qa_mode": null, "_scale_preset": "standard"}}
+
+示例 4:
+用户:给我合成一些数据
+输出:{{"seed": null, "qa_mode": null, "_scale_preset": "standard"}}
 """
 
 
@@ -130,8 +148,17 @@ def _build_extract_prompt(entry: SceneCatalogEntry) -> str:
 
 
 def _validate_value(value: Any, options: tuple) -> str | None:
-    """value 必须等于某 option 的 value 字面量,否则视为缺失返 None。"""
+    """value 校验:
+    - enum 字段(options 非空):value 必须等于某 option 的 value 字面量,否则视为缺失返 None。
+    - free_text 字段(options 为空):value 是非空字符串则接受(返回 strip 后的值),
+      否则(None / 空字符串 / 非字符串)视为缺失返 None。
+    """
     if value is None:
+        return None
+    if not options:
+        # free_text 旁路:无 options 约束,只检查非空字符串
+        if isinstance(value, str) and value.strip():
+            return value.strip()
         return None
     valid = {opt.get("value") for opt in options if isinstance(opt, dict)}
     if value in valid:
@@ -174,7 +201,7 @@ def _check_required_params(params: dict, entry: SceneCatalogEntry) -> None:
 
 
 def _build_question(item: dict) -> dict:
-    """questions 输出条目:{field_name, question, options: [{value,label,hint}]}。"""
+    """questions 输出条目:{field_name, question, type, options: [{value,label,hint}]}。"""
     raw_options = item.get("options", ())
     options_out = []
     for opt in raw_options:
@@ -190,6 +217,7 @@ def _build_question(item: dict) -> dict:
     return {
         "field_name": item.get("param"),
         "question": item.get("question", ""),
+        "type": "free_text" if not raw_options else "enum",
         "options": options_out,
     }
 
