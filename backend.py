@@ -64,6 +64,10 @@ except ImportError:
 
 # ─── Trajectory Agent 壳层(A-1)───────────────────────────────────────────────
 from trajectory_agent.router import router as trajectory_agent_router
+from trajectory_agent.skill_manifest_loader import (
+    get_loaded_catalog,
+    load_manifests,
+)
 
 # ─── 配置 ─────────────────────────────────────────────────────────────────────
 
@@ -661,6 +665,16 @@ async def lifespan(app: FastAPI):
     print(f"   Search2QA 场景: ✅ 已加载")
     print(f"   ToolACE 场景: {'✅ 已加载' if TOOLACE_AVAILABLE else '❌ 未加载'}")
     print(f"   EnvScaler 场景: {'✅ 已加载' if ENVSCALER_AVAILABLE else '❌ 未加载'}")
+
+    # T2-1: 启动期从平台 /api/skills 拉 manifest 喂给 scene_router / clarifier。
+    # fail-fast:任何失败让异常向上传播,uvicorn 因此退出。
+    await load_manifests()
+    catalog = get_loaded_catalog()
+    print(
+        f"   Trajectory Skills (manifest-driven): ✅ 已加载 {len(catalog)} 个 active scene "
+        f"→ {sorted(catalog.keys())}"
+    )
+
     yield
     print("👋 后端关闭")
 

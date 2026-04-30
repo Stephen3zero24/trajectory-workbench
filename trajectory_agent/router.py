@@ -28,8 +28,8 @@ from trajectory_agent.llm_client import (
     LLMResponseInvalid,
 )
 from trajectory_agent.scene_router import (
-    SUPPORTED_SCENES,
     SceneRoutingInvalid,
+    get_supported_scenes,
     route_scene,
 )
 
@@ -108,7 +108,8 @@ async def submit(
     try:
         # ─── Step 1: 场景决定 ───────────────────────────────────────────
         if req.scene_hint is not None:
-            if req.scene_hint not in SUPPORTED_SCENES:
+            supported = get_supported_scenes()
+            if req.scene_hint not in supported:
                 logger.info(
                     "submit exit status=scene_unrecognized reason=invalid_scene_hint hint=%s",
                     req.scene_hint,
@@ -117,7 +118,7 @@ async def submit(
                     status="scene_unrecognized",
                     message=(
                         f"指定的场景 {req.scene_hint!r} 不受支持,"
-                        f"当前可用场景:{sorted(SUPPORTED_SCENES)}"
+                        f"当前可用场景:{sorted(supported)}"
                     ),
                 )
             scene = req.scene_hint

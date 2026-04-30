@@ -75,13 +75,16 @@ def _fake_clarify_ready(scene, params):
 
 
 def _fake_clarify_questions(scene, fields):
+    """T2-2 questions 形态:{field_name, question, options:[{value,label,hint}]}。"""
     async def _f(user_request, scene_arg, client):
         questions = [
             {
-                "field": name,
+                "field_name": name,
                 "question": f"请提供 {name}",
-                "example": None,
-                "default_hint": None,
+                "options": [
+                    {"value": "opt_a", "label": f"{name} A 选项", "hint": "示例 A"},
+                    {"value": "opt_b", "label": f"{name} B 选项", "hint": "示例 B"},
+                ],
             }
             for name in fields
         ]
@@ -114,11 +117,11 @@ def test_submit_dispatched(client, monkeypatch):
 
 
 def test_submit_clarify_needed(client, monkeypatch):
-    """scene_hint + clarify questions → clarify_needed,questions 含 task_desc。"""
+    """scene_hint + clarify questions → clarify_needed,questions 含 qa_mode 字段(T2-2 形态)。"""
     monkeypatch.setattr(
         router_module,
         "clarify",
-        _fake_clarify_questions("search2qa", ["task_desc"]),
+        _fake_clarify_questions("search2qa", ["qa_mode"]),
     )
 
     resp = client.post(
@@ -129,8 +132,12 @@ def test_submit_clarify_needed(client, monkeypatch):
     body = resp.json()
     assert body["status"] == "clarify_needed"
     assert body["scene"] == "search2qa"
-    fields = [q["field"] for q in body["questions"]]
-    assert "task_desc" in fields
+    fields = [q["field_name"] for q in body["questions"]]
+    assert "qa_mode" in fields
+    # T2-2 形态:每个 question 必须含 options 列表,每个 option 含 value/label/hint
+    qa_mode_q = next(q for q in body["questions"] if q["field_name"] == "qa_mode")
+    assert isinstance(qa_mode_q["options"], list)
+    assert qa_mode_q["options"][0]["value"] == "opt_a"
 
 
 def test_submit_scene_unrecognized_via_low_confidence(client, monkeypatch):

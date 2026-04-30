@@ -1,24 +1,43 @@
-"""Clarifier — A-2-3b 参数澄清层。
+"""Clarifier — T2-2 manifest 驱动的参数澄清层。
 
-给定 user_request 和 scene,用 LLM 从自然语言里抽取 rule 里定义的字段值;
-- 若 must 或 soft 字段有任何一个为空,返回 status=questions,附追问清单
-- 若全部齐备,返回 status=ready 并把 rule.defaults 和抽到的值合并成 dispatch 参数
+数据流:
+    skill_manifest_loader.get_loaded_catalog()[scene]
+        ↓  SceneCatalogEntry.must_clarify (enum 字段定义)
+        ↓  LLM 抽参(从给定 enum options 中匹配,失败返 null)
+        ↓  _validate_value 校验(value 必须在 options 集合内)
+        ↓  ready / questions 二分
+        ↓  ready 时:defaults 全量合并 → maps_to 展开 → required_params 校验
 
-本层不做 dispatch,不接 submit 端点。A-2-4 再把本层整合进 submit。
+与 T2-1 形态对比:
+- 字段不再是自由文本(str/int/bool 三类型),而是 enum + options
+- 不再有 must_fields / soft_fields 双层,只有 must_clarify 一层
+- 新增 _scale_preset 这种"展开字段":选 fast → maps_to 把
+  {max_samples: 1} 注入实际 params,原始 _scale_preset 字段不进 dispatcher
+- 新增 required_params 后置校验:manifest 声明的必填若不在最终 params,
+  fail-fast 抛 ClarifierInvalid
+
+questions 字段形态(breaking change vs T2-1):
+    [{field_name, question, options: [{value, label, hint}]}]
+
+LLM 调用形态与 scene_router 一致:单次 chat_json,system+user 双消息,
+temperature 0.1。
 """
 
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from trajectory_agent.clarify_rules import ClarifyRule, get_rule
 from trajectory_agent.llm_client import LLMClient
+from trajectory_agent.skill_manifest_loader import (
+    SceneCatalogEntry,
+    get_loaded_catalog,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class ClarifierInvalid(Exception):
-    """LLM 返回的抽参 JSON 不符合 schema,或字段类型无法转换。"""
+    """LLM 返回不是 dict / required_params 后置校验失败。"""
 
     def __init__(self, message: str, *, raw: dict | None = None):
         super().__init__(message)
@@ -43,44 +62,64 @@ class ClarifyOutcome:
         }
 
 
-_TYPE_DESCRIPTIONS = {
-    "str": "字符串",
-    "int": "整数",
-    "bool": "布尔 true/false",
-}
+# ─── prompt ─────────────────────────────────────────────────────────────────
 
 
-def _build_extract_prompt(rule: ClarifyRule) -> str:
-    all_fields = list(rule.must_fields) + list(rule.soft_fields)
-    if not all_fields:
-        # 极端情况:规则没任何待抽字段,LLM 直接返回空 dict
-        return (
-            "你是参数抽取助手。本次无字段需要抽取,请直接返回空 JSON 对象 {}。"
-        )
+def _build_extract_prompt(entry: SceneCatalogEntry) -> str:
+    field_blocks: list[str] = []
+    schema_keys: list[str] = []
 
-    lines = []
-    for name in all_fields:
-        spec = rule.field_specs.get(name, {})
-        ftype = spec.get("type", "str")
-        type_desc = _TYPE_DESCRIPTIONS.get(ftype, ftype)
-        question = spec.get("question", "")
-        lines.append(f"- {name} ({ftype} / {type_desc}) —— {question}")
-    fields_block = "\n".join(lines)
+    for item in entry.must_clarify:
+        param = item["param"]
+        question = item.get("question", "")
+        options = item.get("options", ())
+        schema_keys.append(param)
 
-    schema_entries = ",\n  ".join(
-        f'"{name}": <value_or_null>' for name in all_fields
-    )
+        if options:
+            opt_lines: list[str] = []
+            for opt in options:
+                value = opt.get("value", "")
+                label = opt.get("label", "")
+                hint = opt.get("hint", "")
+                line = f'    * "{value}" ({label})'
+                if hint:
+                    line += f": {hint}"
+                opt_lines.append(line)
+            opts_block = "\n".join(opt_lines)
+            field_blocks.append(f"- [enum] {param}: {question}\n{opts_block}")
+        else:
+            field_blocks.append(
+                f"- [free_text] {param}: {question}\n"
+                f"  (从用户需求中抽取领域关键词或主题词,无法识别返 null)"
+            )
 
-    return f"""你是参数抽取助手,从用户的数据合成需求里抽取指定字段的值。
+    fields_section = "\n\n".join(field_blocks)
+    schema_entries = ",\n  ".join(f'"{k}": <value_or_null>' for k in schema_keys)
 
-要抽取的字段:
-{fields_block}
+    return f"""你是参数抽取助手,根据用户的数据合成需求,从用户表述中抽取每个字段的取值——枚举字段从给定选项中匹配,自由文本字段从用户表述中提取关键词。无法判断的字段返回 null。
 
-抽取规则:
-- 若用户**明确**提到某字段的值,返回该值(数值返回 JSON number,字符串返回 string,布尔返回 true/false)
-- 若用户未明确提到该字段,返回 null(JSON 的 null,不是字符串 "null")
-- 不要猜测、不要编造、不要用常识兜底
-- 若用户提到了字段清单之外的其他信息,忽略即可
+字段:
+{fields_section}
+
+匹配规则:
+- 用户**明确**或**强烈暗示**某选项 → 返回该选项的 value 字面量(不是 label,不是 hint)
+- 用户没暗示 → 返回 null,系统会再追问
+
+判别指引(适用规模相关字段,如 _scale_preset):
+- 用户说"快速试一下"/"先跑通"/"快速验证"/"快速看看效果" → 选 fast
+- 用户说"批量"/"大量"/"多一点"/"全量"/"上规模" → 选 batch
+- 用户说"标准"/"正常量级"/"差不多就行" → 选 standard
+- 用户没提规模 → 选 standard(中位默认)
+
+判别指引(适用 qa_mode):
+- 用户提到"问题"/"提问"/"出题"/"基于关键词出题" → 选 question
+- 用户提到"答案"/"反推"/"已有答案"/"反向" → 选 answer
+- 不能确定 → 返回 null
+
+判别指引(适用 seed 等 free_text 字段):
+- 用户提到具体领域/主题词("医疗问诊"/"法律咨询"/"电商客服"等)→ 抽取该词
+- 用户只说"合成数据"未提领域 → 返回 null
+- 抽取结果保留中文/英文原词,不翻译,不缩写
 
 输出要求(严格 JSON,不要任何额外文字):
 {{
@@ -88,76 +127,102 @@ def _build_extract_prompt(rule: ClarifyRule) -> str:
 }}
 
 示例 1:
-字段清单:task_desc (str) —— 数据合成的主题/领域
-用户:我要合成关于量子计算的搜索问答数据
-输出:{{"task_desc": "量子计算"}}
+用户:我想快速验证 search2qa,基于关键词出题
+输出:{{"qa_mode": "question", "_scale_preset": "fast"}}
 
 示例 2:
-字段清单:task_count (int) —— 合成轨迹条数
-用户:给我来一批工具调用的训练数据
-输出:{{"task_count": null}}
+用户:给我合成一些工具调用数据
+输出:{{"_scale_preset": "standard"}}
+
+示例 3:
+用户:我想做点法律咨询方向的训练数据,数量不用太多
+输出:{{"seed": "法律咨询", "qa_mode": null, "_scale_preset": "standard"}}
+
+示例 4:
+用户:给我合成一些数据
+输出:{{"seed": null, "qa_mode": null, "_scale_preset": "standard"}}
 """
 
 
-def _coerce(value: Any, field_name: str, field_type: str) -> Any:
-    """把 LLM 返回的值按字段类型强转;转不动抛 ClarifierInvalid;null/空串 → None。"""
+# ─── helpers ────────────────────────────────────────────────────────────────
+
+
+def _validate_value(value: Any, options: tuple) -> str | None:
+    """value 校验:
+    - enum 字段(options 非空):value 必须等于某 option 的 value 字面量,否则视为缺失返 None。
+    - free_text 字段(options 为空):value 是非空字符串则接受(返回 strip 后的值),
+      否则(None / 空字符串 / 非字符串)视为缺失返 None。
+    """
     if value is None:
         return None
+    if not options:
+        # free_text 旁路:无 options 约束,只检查非空字符串
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        return None
+    valid = {opt.get("value") for opt in options if isinstance(opt, dict)}
+    if value in valid:
+        return value
+    return None
 
-    if field_type == "str":
-        if isinstance(value, str):
-            stripped = value.strip()
-            return stripped or None
-        # 其他类型强转为 str
-        return str(value)
 
-    if field_type == "int":
-        # 注意 bool 是 int 的子类,要先排除
-        if isinstance(value, bool):
-            raise ClarifierInvalid(
-                f"字段 {field_name!r} 期望 int,LLM 返回了 bool {value!r}"
-            )
-        if isinstance(value, int):
-            return value
-        if isinstance(value, float):
-            if value.is_integer():
-                return int(value)
-            raise ClarifierInvalid(
-                f"字段 {field_name!r} 期望 int,LLM 返回了非整数 float {value!r}"
-            )
-        if isinstance(value, str):
-            stripped = value.strip()
-            if not stripped:
-                return None
-            try:
-                return int(stripped)
-            except ValueError as e:
-                raise ClarifierInvalid(
-                    f"字段 {field_name!r} 期望 int,LLM 返回了无法解析的字符串 {value!r}: {e}"
-                ) from None
+def _expand_maps_to(params: dict, entry: SceneCatalogEntry) -> dict:
+    """对 must_clarify 中带 maps_to 的选项做展开,以 _ 开头的字段从 params 移除。
+
+    例:_scale_preset=fast → 找到 fast 选项的 maps_to={max_samples:1} → 合入 params,
+    然后从 params 中移除 _scale_preset,因为下划线前缀字段不应进 dispatcher。
+    """
+    out = dict(params)
+    for item in entry.must_clarify:
+        param_name = item.get("param")
+        if not isinstance(param_name, str) or param_name not in out:
+            continue
+        chosen = out[param_name]
+        for opt in item.get("options", ()):
+            if not isinstance(opt, dict) or opt.get("value") != chosen:
+                continue
+            maps_to = opt.get("maps_to")
+            if isinstance(maps_to, dict):
+                for k, v in maps_to.items():
+                    out[k] = v
+            break
+        if param_name.startswith("_"):
+            out.pop(param_name, None)
+    return out
+
+
+def _check_required_params(params: dict, entry: SceneCatalogEntry) -> None:
+    missing = [p for p in entry.required_params if p not in params]
+    if missing:
         raise ClarifierInvalid(
-            f"字段 {field_name!r} 期望 int,LLM 返回类型 {type(value).__name__}: {value!r}"
+            f"required by manifest but not produced by must_clarify or defaults: "
+            f"{missing}"
         )
 
-    if field_type == "bool":
-        if isinstance(value, bool):
-            return value
-        raise ClarifierInvalid(
-            f"字段 {field_name!r} 期望 bool,LLM 返回类型 {type(value).__name__}: {value!r}"
+
+def _build_question(item: dict) -> dict:
+    """questions 输出条目:{field_name, question, type, options: [{value,label,hint}]}。"""
+    raw_options = item.get("options", ())
+    options_out = []
+    for opt in raw_options:
+        if not isinstance(opt, dict):
+            continue
+        options_out.append(
+            {
+                "value": opt.get("value"),
+                "label": opt.get("label"),
+                "hint": opt.get("hint"),
+            }
         )
-
-    # 未知 type:原样返回,交给上层自行处理
-    return value
-
-
-def _build_question(field_name: str, rule: ClarifyRule) -> dict:
-    spec = rule.field_specs.get(field_name, {})
     return {
-        "field": field_name,
-        "question": spec.get("question", f"请提供 {field_name} 的值。"),
-        "example": spec.get("example"),
-        "default_hint": spec.get("default_hint"),
+        "field_name": item.get("param"),
+        "question": item.get("question", ""),
+        "type": "free_text" if not raw_options else "enum",
+        "options": options_out,
     }
+
+
+# ─── main ───────────────────────────────────────────────────────────────────
 
 
 async def clarify(
@@ -165,26 +230,34 @@ async def clarify(
     scene: str,
     client: LLMClient,
 ) -> ClarifyOutcome:
-    """按 rule 抽参并决定 ready / questions。LLM/schema 异常上抛。"""
-    rule = get_rule(scene)
-    all_fields = list(rule.must_fields) + list(rule.soft_fields)
+    """根据 manifest must_clarify 对用户请求做 enum 抽取并决定 ready / questions。"""
+    catalog = get_loaded_catalog()
+    if scene not in catalog:
+        raise KeyError(
+            f"scene {scene!r} 不在 manifest catalog,"
+            f"可用场景:{sorted(catalog.keys())}"
+        )
+    entry = catalog[scene]
+
+    must_clarify = entry.must_clarify
+    field_names = [item["param"] for item in must_clarify]
 
     logger.info(
         "clarify enter scene=%s user_request=%r fields=%s",
         scene,
         user_request[:80],
-        all_fields,
+        field_names,
     )
 
     # ─── 抽参 ───────────────────────────────────────────────────────────
-    if not all_fields:
+    if not must_clarify:
         extracted: dict[str, Any] = {}
     elif not user_request or not user_request.strip():
-        extracted = {name: None for name in all_fields}
+        extracted = {name: None for name in field_names}
     else:
         raw = await client.chat_json(
             [
-                {"role": "system", "content": _build_extract_prompt(rule)},
+                {"role": "system", "content": _build_extract_prompt(entry)},
                 {"role": "user", "content": user_request},
             ],
             temperature=0.1,
@@ -195,17 +268,17 @@ async def clarify(
                 raw=raw if isinstance(raw, dict) else None,
             )
         extracted = {}
-        for name in all_fields:
-            ftype = rule.field_specs.get(name, {}).get("type", "str")
-            extracted[name] = _coerce(raw.get(name), name, ftype)
+        for item in must_clarify:
+            param = item["param"]
+            extracted[param] = _validate_value(
+                raw.get(param), item.get("options", ())
+            )
 
     # ─── 判齐 ───────────────────────────────────────────────────────────
-    missing_must = [n for n in rule.must_fields if _is_missing(extracted.get(n))]
-    missing_soft = [n for n in rule.soft_fields if _is_missing(extracted.get(n))]
+    missing_items = [item for item in must_clarify if extracted.get(item["param"]) is None]
 
-    if missing_must or missing_soft:
-        questions = [_build_question(n, rule) for n in missing_must]
-        questions += [_build_question(n, rule) for n in missing_soft]
+    if missing_items:
+        questions = [_build_question(item) for item in missing_items]
         outcome = ClarifyOutcome(
             status="questions",
             scene=scene,
@@ -213,19 +286,17 @@ async def clarify(
             extracted=extracted,
         )
         logger.info(
-            "clarify exit scene=%s status=questions missing_must=%s missing_soft=%s",
+            "clarify exit scene=%s status=questions missing=%s",
             scene,
-            missing_must,
-            missing_soft,
+            [item["param"] for item in missing_items],
         )
         return outcome
 
-    # ─── ready:合并 defaults + 抽到的值(抽到的优先)──────────────────
-    params: dict[str, Any] = dict(rule.defaults)
-    for name in all_fields:
-        value = extracted.get(name)
-        if value is not None:
-            params[name] = value
+    # ─── ready:defaults 全量合并 → maps_to 展开 → required_params 校验 ─
+    params: dict[str, Any] = dict(entry.defaults)
+    params.update(extracted)
+    params = _expand_maps_to(params, entry)
+    _check_required_params(params, entry)
 
     outcome = ClarifyOutcome(
         status="ready",
@@ -233,13 +304,9 @@ async def clarify(
         params=params,
         extracted=extracted,
     )
-    logger.info("clarify exit scene=%s status=ready param_keys=%s", scene, sorted(params.keys()))
+    logger.info(
+        "clarify exit scene=%s status=ready param_keys=%s",
+        scene,
+        sorted(params.keys()),
+    )
     return outcome
-
-
-def _is_missing(value: Any) -> bool:
-    if value is None:
-        return True
-    if isinstance(value, str) and not value.strip():
-        return True
-    return False

@@ -9,6 +9,22 @@ Search2QA Scene Handler — 沙箱内执行 Search2QA Pipeline
 
 使用方式（在 backend.py 中）：
     from search2qa.scene_handler import run_search2qa_in_sandbox
+
+Internal naming note (A-2 issue #1, closed as naming-only):
+    本模块 ``run_search2qa_in_sandbox`` 的入参 ``config`` 内部使用字段名
+    ``mode``，取值 ``"question"`` / ``"answer"``（见 :185 schema 与 :241 读取点）。
+
+    对应 manifest SSOT
+    （``ray-data-agent-proto/skills/trajectory-search2qa/manifest.json``）
+    定义的字段名是 ``qa_mode``，``required_params`` 与 ``must_clarify`` 均使用
+    ``qa_mode``。
+
+    ``qa_mode → mode`` 的翻译发生在生产调用方 ``backend.py:469``，
+    ``qa_mode`` 的值会被正确消费，pipeline 不会 fallback 到默认值。
+
+    内外命名分离是当前架构现状，并非 bug；如需统一命名，需同步评估
+    ``backend.py`` 对其他 4 个场景的对称性，跨场景一致性要求超出
+    search2qa 单场景修整的范围。
 """
 
 import asyncio
