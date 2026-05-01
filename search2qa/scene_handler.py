@@ -120,6 +120,40 @@ async def upload_scripts_to_sandbox(sandbox: Sandbox, emit: Callable = None):
             emit("upload", f"已上传: {filename}")
 
 
+# ─── 诊断辅助 ──────────────────────────────────────────────────────────────────
+
+def _emit_full_stderr(
+    emit: Callable,
+    event_type: str,
+    label: str,
+    stderr: str,
+    head_chars: int = 500,
+    log_prefix: str = "search2qa_install_stderr",
+) -> None:
+    """Emit stderr without silently truncating.
+
+    Long stderr (>1000 chars) is written to /tmp/<log_prefix>_<ts>.log;
+    the emitted message contains the file path plus a head excerpt so the
+    full traceback is recoverable for diagnostics.
+    """
+    if not stderr:
+        return
+    if len(stderr) > 1000:
+        ts = int(time.time() * 1000)
+        log_path = f"/tmp/{log_prefix}_{label}_{ts}.log"
+        try:
+            with open(log_path, "w") as f:
+                f.write(stderr)
+            emit(
+                event_type,
+                f"⚠️ {label} stderr ({len(stderr)} chars, see {log_path}):\n{stderr[:head_chars]}",
+            )
+        except Exception:
+            emit(event_type, f"⚠️ {label} stderr ({len(stderr)} chars):\n{stderr[:head_chars]}")
+    else:
+        emit(event_type, f"⚠️ {label} stderr:\n{stderr}")
+
+
 # ─── 依赖安装 ──────────────────────────────────────────────────────────────────
 
 async def install_dependencies(sandbox: Sandbox, emit: Callable = None):
@@ -153,7 +187,10 @@ async def install_dependencies(sandbox: Sandbox, emit: Callable = None):
     )
     ensurepip_err = "\n".join([l.text for l in ensurepip_result.logs.stderr]) if ensurepip_result.logs.stderr else ""
     if emit:
-        emit("install", "✅ pip ready" if not ensurepip_err else f"⚠️ ensurepip stderr: {ensurepip_err[:200]}")
+        if not ensurepip_err:
+            emit("install", "✅ pip ready")
+        else:
+            _emit_full_stderr(emit, "install_warn", "ensurepip", ensurepip_err)
 
     for cmd in dep_groups:
         if emit:
@@ -168,7 +205,7 @@ async def install_dependencies(sandbox: Sandbox, emit: Callable = None):
 
         if stderr and "error" in stderr.lower():
             if emit:
-                emit("install_warn", f"安装警告: {stderr[:200]}")
+                _emit_full_stderr(emit, "install_warn", cmd.split()[-1], stderr)
 
     # 安装 playwright（可选，失败不阻断）
     try:
@@ -290,6 +327,9 @@ async def run_search2qa_in_sandbox(
 
             stdout = "\n".join([l.text for l in result.logs.stdout]) if result.logs.stdout else ""
             stderr = "\n".join([l.text for l in result.logs.stderr]) if result.logs.stderr else ""
+            exit_code = getattr(result, "exit_code", None)
+            if exit_code is None:
+                exit_code = getattr(result, "return_code", None)
 
             # 实时日志
             if stdout:
@@ -297,8 +337,24 @@ async def run_search2qa_in_sandbox(
                     if line.strip():
                         _emit("pipeline_log", line.strip())
 
-            if stderr and "error" in stderr.lower():
-                _emit("pipeline_warn", f"stderr: {stderr[:500]}")
+            if stderr:
+                _emit_full_stderr(
+                    lambda t, m: _emit(t, m),
+                    "pipeline_warn",
+                    "pipeline",
+                    stderr,
+                    head_chars=1500,
+                    log_prefix="search2qa_pipeline_stderr",
+                )
+
+            # exit_code fail-fast: 非 0 立即抛错，避免继续走到 collect_start
+            # 而误报 'final_output.json not found'
+            if exit_code is not None and exit_code != 0:
+                raise RuntimeError(
+                    f"search2qa pipeline exited with code {exit_code}. "
+                    f"See pipeline_warn event for stderr "
+                    f"(or /tmp/search2qa_pipeline_stderr_*.log)."
+                )
 
             # 8. 收集输出文件
             _emit("collect_start", "收集输出轨迹数据...")
