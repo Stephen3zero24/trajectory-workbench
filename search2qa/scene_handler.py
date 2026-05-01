@@ -43,6 +43,12 @@ from opensandbox.config import ConnectionConfig
 
 OPENSANDBOX_SERVER = os.environ.get("OPENSANDBOX_SERVER", "http://127.0.0.1:8080")
 
+# Container Python with pip; /usr/bin/python3 in code-interpreter:v1.0.2
+# is bare 3.12 without pip. The cpython-3.14.* venv ships pip.
+# Glob is expanded by the container shell so aarch64 / x86_64 suffixes
+# both resolve at runtime.
+SANDBOX_PYTHON = "/opt/python/versions/cpython-3.14.*/bin/python3"
+
 # search2qa 脚本所在目录（相对于项目根目录）
 SEARCH2QA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)))
 
@@ -98,6 +104,18 @@ async def upload_scripts_to_sandbox(sandbox: Sandbox, emit: Callable = None):
     # 创建工作目录
     await sandbox.commands.run("mkdir -p /workspace/search2qa")
     await sandbox.commands.run("mkdir -p /workspace/output/trace")
+
+    # DEBUG: probe SDK result attributes for exit code (M2 dispatcher
+    # integration diagnostic). Both 'exit_code' and 'return_code' returned
+    # None in the previous probe; this one-shot dump identifies the real
+    # attribute name. Will be removed in the next commit once a proper
+    # fail-fast guard is wired up.
+    _probe_result = await sandbox.commands.run("echo probe")
+    if emit:
+        emit(
+            "install",
+            f"[probe] result attrs: {[a for a in dir(_probe_result) if not a.startswith('_')]}",
+        )
 
     for filename in UPLOAD_FILES:
         filepath = os.path.join(SEARCH2QA_DIR, filename)
@@ -165,24 +183,24 @@ async def install_dependencies(sandbox: Sandbox, emit: Callable = None):
     # 安装依赖（分批安装避免超时）
     dep_groups = [
         # 搜索相关
-        "python3 -m pip install duckduckgo-search>=4.1.0",
+        f"{SANDBOX_PYTHON} -m pip install duckduckgo-search>=4.1.0",
         # 爬虫相关
-        "python3 -m pip install requests beautifulsoup4 lxml trafilatura",
+        f"{SANDBOX_PYTHON} -m pip install requests beautifulsoup4 lxml trafilatura",
         # crawl4ai
-        "python3 -m pip install crawl4ai>=0.3.0",
+        f"{SANDBOX_PYTHON} -m pip install crawl4ai>=0.3.0",
         # PDF 处理
-        "python3 -m pip install PyMuPDF pymupdf4llm",
+        f"{SANDBOX_PYTHON} -m pip install PyMuPDF pymupdf4llm",
         # LLM 客户端
-        "python3 -m pip install openai",
+        f"{SANDBOX_PYTHON} -m pip install openai",
         # 工具类
-        "python3 -m pip install python-dotenv tqdm",
+        f"{SANDBOX_PYTHON} -m pip install python-dotenv tqdm",
     ]
 
     # 确保沙箱里有 pip（v1.0.2 镜像移除了 pip）
     if emit:
         emit("install", "⚙️  bootstrap pip via ensurepip...")
     ensurepip_result = await sandbox.commands.run(
-        "python3 -m ensurepip --upgrade",
+        f"{SANDBOX_PYTHON} -m ensurepip --upgrade",
         opts=RunCommandOpts(timeout=timedelta(seconds=60)),
     )
     ensurepip_err = "\n".join([l.text for l in ensurepip_result.logs.stderr]) if ensurepip_result.logs.stderr else ""
@@ -212,7 +230,7 @@ async def install_dependencies(sandbox: Sandbox, emit: Callable = None):
         if emit:
             emit("install", "安装 playwright（可选）...")
         await sandbox.commands.run(
-            "python3 -m pip install playwright && playwright install chromium --with-deps",
+            f"{SANDBOX_PYTHON} -m pip install playwright && playwright install chromium --with-deps",
             opts=RunCommandOpts(timeout=timedelta(seconds=180)),
         )
     except Exception:
@@ -301,7 +319,7 @@ async def run_search2qa_in_sandbox(
 
             run_cmd = (
                 f'{env_cmd} && cd /workspace/search2qa && '
-                f'python3 main.py '
+                f'{SANDBOX_PYTHON} main.py '
                 f'--seed "{seed}" '
                 f'--mode {mode} '
                 f'--model {model} '
