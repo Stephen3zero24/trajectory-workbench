@@ -47,7 +47,7 @@ OPENSANDBOX_SERVER = os.environ.get("OPENSANDBOX_SERVER", "http://127.0.0.1:8080
 # is bare 3.12 without pip. The cpython-3.14.* venv ships pip.
 # Glob is expanded by the container shell so aarch64 / x86_64 suffixes
 # both resolve at runtime.
-SANDBOX_PYTHON = "/opt/python/versions/cpython-3.14.*/bin/python3"
+SANDBOX_PYTHON = "/opt/python/versions/cpython-3.13.*/bin/python3"
 
 
 def _result_failed(result) -> bool:
