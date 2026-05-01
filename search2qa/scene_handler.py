@@ -188,7 +188,7 @@ async def install_dependencies(sandbox: Sandbox, emit: Callable = None):
     # --break-system-packages bypasses the guard. Safe in throwaway sandbox.
     dep_groups = [
         # 搜索相关
-        f"{SANDBOX_PYTHON} -m pip install --break-system-packages duckduckgo-search>=4.1.0",
+        f"{SANDBOX_PYTHON} -m pip install --break-system-packages ddgs",
         # 爬虫相关
         f"{SANDBOX_PYTHON} -m pip install --break-system-packages requests beautifulsoup4 lxml trafilatura",
         # crawl4ai
