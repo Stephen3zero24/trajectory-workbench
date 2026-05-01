@@ -480,6 +480,7 @@ async def run_search2qa_iteration(task_id: str):
                 "deepseek_api_key": DEEPSEEK_API_KEY,
                 "deepseek_base_url": DEEPSEEK_BASE_URL,
                 "timeout_minutes": config.get("timeout_minutes", 15),
+                "task_id": task_id,
             },
             emit=emit,
         )

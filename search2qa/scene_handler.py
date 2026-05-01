@@ -417,6 +417,42 @@ async def run_search2qa_in_sandbox(
                     except json.JSONDecodeError:
                         pass
 
+            # 持久化沙箱内 trace 文件到主机,供 demo / debug 查看。
+            # 失败不阻塞 cleanup,沙箱仍正常销毁。
+            try:
+                task_id_for_dir = (config or {}).get("task_id") or sandbox_id or "unknown"
+                repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                host_trace_dir = os.path.join(repo_root, "output", "trace", task_id_for_dir)
+                find_result = await sandbox.commands.run(
+                    "find /workspace/output/trace -type f"
+                )
+                trace_paths = []
+                if find_result.logs.stdout:
+                    trace_paths = [
+                        l.text.strip() for l in find_result.logs.stdout if l.text.strip()
+                    ]
+                for sandbox_path in trace_paths:
+                    rel = sandbox_path[len("/workspace/output/trace/"):]
+                    local_path = os.path.join(host_trace_dir, rel)
+                    os.makedirs(os.path.dirname(local_path), exist_ok=True)
+                    cat = await sandbox.commands.run(f"cat '{sandbox_path}'")
+                    raw = "\n".join([l.text for l in cat.logs.stdout]) if cat.logs.stdout else ""
+                    with open(local_path, "w") as f:
+                        f.write(raw)
+                if trace_paths:
+                    rel_dir = os.path.relpath(host_trace_dir, repo_root)
+                    _emit(
+                        "trace_persisted",
+                        f"轨迹已保存: {rel_dir}/ ({len(trace_paths)} 文件)",
+                    )
+                else:
+                    _emit("trace_persisted_warn", "trace 目录为空，未持久化")
+            except Exception as _persist_e:
+                _emit(
+                    "trace_persisted_warn",
+                    f"trace 持久化失败（不阻塞 cleanup）: {_persist_e}",
+                )
+
             _emit("pipeline_complete", "Search2QA Pipeline 执行完成")
 
             return {
