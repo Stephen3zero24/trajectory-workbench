@@ -277,10 +277,13 @@ async def llm_with_tools(
     # 达到最大迭代次数
     print(f"  {log_prefix} ⚠ 达到最大迭代次数 ({max_iterations})", flush=True)
 
-    # 兜底:如果所有轮次都走了 tool_calls 分支,final_content 仍是空串。
-    # 强制再调一次 LLM 但禁用工具,逼它产出最终 QA JSON。
-    if not final_content:
-        print(f"  {log_prefix} 🔁 工具循环耗尽,禁用工具强制产出 QA...", flush=True)
+    # 兜底触发条件:final_content 中无法提取有效 QA。这覆盖三种情况:
+    # 1. 所有轮次都走 tool_calls 分支,final_content 仍是空串
+    # 2. 某轮 LLM 调用失败,call_deepseek_with_tools 把错误包成 content,
+    #    final_content 被赋成错误字符串(非空但不可解析)
+    # 3. LLM 最后一轮返回了文本但格式不符合 extractor 要求
+    if not extract_qa_from_text(final_content):
+        print(f"  {log_prefix} 🔁 final_content 无有效 QA,禁用工具强制产出...", flush=True)
         # 在对话末尾追加一条 user 提示,明确要求 JSON 输出
         messages.append({
             "role": "user",
