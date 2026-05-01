@@ -275,7 +275,33 @@ async def llm_with_tools(
         })
 
     # 达到最大迭代次数
-    print(f"  {log_prefix} ⚠ 达到最大迭代次数 ({max_iterations})")
+    print(f"  {log_prefix} ⚠ 达到最大迭代次数 ({max_iterations})", flush=True)
+
+    # 兜底:如果所有轮次都走了 tool_calls 分支,final_content 仍是空串。
+    # 强制再调一次 LLM 但禁用工具,逼它产出最终 QA JSON。
+    if not final_content:
+        print(f"  {log_prefix} 🔁 工具循环耗尽,禁用工具强制产出 QA...", flush=True)
+        # 在对话末尾追加一条 user 提示,明确要求 JSON 输出
+        messages.append({
+            "role": "user",
+            "content": (
+                "工具调用预算已用尽。请基于已收集到的信息,"
+                "立即按 system prompt 中要求的 JSON 格式输出 QA 对,"
+                "不要再调用任何工具。"
+            ),
+        })
+        forced = call_deepseek_with_tools(
+            messages=messages,
+            model=model,
+            temperature=temperature,
+            tools=None,  # 关键:禁用工具,LLM 必须输出文本
+        )
+        total_tokens += forced["tokens"]
+        final_content = forced["content"] or ""
+        # 记录到轨迹
+        trace_manager.add_llm_output(final_content)
+        messages.append({"role": "assistant", "content": final_content})
+
     return {
         "content": final_content,
         "qa": extract_qa_from_text(final_content),
