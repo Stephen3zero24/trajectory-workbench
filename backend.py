@@ -16,6 +16,7 @@ import sys
 import time
 import uuid
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Optional
 from contextlib import asynccontextmanager
 
@@ -74,6 +75,8 @@ from trajectory_agent.skill_manifest_loader import (
 OPENSANDBOX_SERVER = os.environ.get("OPENSANDBOX_SERVER", "http://127.0.0.1:8080")
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
 DEEPSEEK_BASE_URL = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+
+REPO_ROOT = Path(__file__).resolve().parent
 
 llm_client = None
 
@@ -448,6 +451,144 @@ def review_search2qa_quality(question: str, answer: str, trajectory_data: dict, 
 # Search2QA 专用执行函数
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _normalize_tool_args(raw):
+    """rewrite trace 里 tool_args 是 dict,init trace 里是 JSON string。
+    统一成 dict;json.loads 失败回退原值,不抛错。"""
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        try:
+            return json.loads(raw)
+        except Exception:
+            return raw
+    return raw
+
+
+def _events_to_steps_rewrite(events: list) -> list:
+    """rewrite schema: type ∈ {thought, tool_call, tool_result}。
+    每个 thought 起一个新 step,后续 tool_call/tool_result 通过 tool_call_id 配对。"""
+    steps = []
+    current = None
+
+    def flush():
+        nonlocal current
+        if current and (current.get("thought") or current.get("tool_calls")):
+            current["step_id"] = len(steps)
+            steps.append(current)
+        current = None
+
+    for ev in events:
+        t = ev.get("type")
+        if t == "thought":
+            flush()
+            current = {"thought": ev.get("content"), "tool_calls": []}
+        elif t == "tool_call":
+            if current is None:
+                current = {"thought": None, "tool_calls": []}
+            current["tool_calls"].append({
+                "tool_name": ev.get("tool_name"),
+                "tool_args": _normalize_tool_args(ev.get("tool_args")),
+                "tool_call_id": ev.get("tool_call_id"),
+                "tool_output": None,
+                "success": False,
+            })
+        elif t == "tool_result":
+            if current and current.get("tool_calls"):
+                tcid = ev.get("tool_call_id")
+                for tc in current["tool_calls"]:
+                    if tc.get("tool_call_id") == tcid:
+                        tc["tool_output"] = ev.get("content")
+                        tc["success"] = True
+                        break
+    flush()
+    return steps
+
+
+def _events_to_steps_init(events: list) -> list:
+    """init schema: type ∈ {stage_marker, llm_output, tool_call, tool_result}。
+    跳过 stage_marker;llm_output 起一个新 step(content 整段塞 thought,不抽取);
+    tool_call/tool_result 通过 tool_call_id 配对。"""
+    steps = []
+    current = None
+
+    def flush():
+        nonlocal current
+        if current and (current.get("thought") or current.get("tool_calls")):
+            current["step_id"] = len(steps)
+            steps.append(current)
+        current = None
+
+    for ev in events:
+        t = ev.get("type")
+        if t == "stage_marker":
+            continue
+        if t == "llm_output":
+            flush()
+            current = {"thought": ev.get("content"), "tool_calls": []}
+        elif t == "tool_call":
+            if current is None:
+                current = {"thought": None, "tool_calls": []}
+            current["tool_calls"].append({
+                "tool_name": ev.get("tool_name"),
+                "tool_args": _normalize_tool_args(ev.get("tool_args")),
+                "tool_call_id": ev.get("tool_call_id"),
+                "tool_output": None,
+                "success": False,
+            })
+        elif t == "tool_result":
+            if current and current.get("tool_calls"):
+                tcid = ev.get("tool_call_id")
+                for tc in current["tool_calls"]:
+                    if tc.get("tool_call_id") == tcid:
+                        tc["tool_output"] = ev.get("content")
+                        tc["success"] = True
+                        break
+    flush()
+    return steps
+
+
+def _load_trace_as_steps(task_id: str, repo_root: Path) -> list:
+    """读 search2qa 沙箱产的 trace 文件,聚合成 WorkbenchTrajectoryStep[]。
+    优先 trace_rewrite.json,fallback trace_init.json。
+    沙箱实际把文件落在 output/trace/<task_id>/<seed>_<ts>/,取 mtime 最新子目录。"""
+    trace_dir = repo_root / "output" / "trace" / task_id
+    if not trace_dir.exists():
+        return []
+
+    subdirs = [p for p in trace_dir.iterdir() if p.is_dir()]
+    if not subdirs:
+        return []
+    inner_dir = max(subdirs, key=lambda p: p.stat().st_mtime)
+
+    rewrite_path = inner_dir / "trace_rewrite.json"
+    init_path = inner_dir / "trace_init.json"
+
+    if rewrite_path.exists():
+        try:
+            data = json.loads(rewrite_path.read_text(encoding="utf-8"))
+            events = data.get("rewritten_trace") or []
+            if events:
+                steps = _events_to_steps_rewrite(events)
+                if steps:
+                    return steps
+                print(
+                    f"[search2qa] trace_rewrite parsed events but aggregated "
+                    f"empty steps for {task_id}, falling back to trace_init"
+                )
+        except Exception as e:
+            print(f"[search2qa] trace_rewrite parse failed for {task_id}: {e}")
+
+    if init_path.exists():
+        try:
+            data = json.loads(init_path.read_text(encoding="utf-8"))
+            events = data.get("trace") or []
+            return _events_to_steps_init(events)
+        except Exception as e:
+            print(f"[search2qa] trace_init parse failed for {task_id}: {e}")
+
+    return []
+
+
 async def run_search2qa_iteration(task_id: str):
     """执行一轮 Search2QA Pipeline"""
     task = tasks_store.get(task_id)
@@ -489,7 +630,7 @@ async def run_search2qa_iteration(task_id: str):
         trajectory_data = result.get("trajectory_data", {})
 
         formatted_trajectory = {
-            "steps": [],
+            "steps": _load_trace_as_steps(task_id, REPO_ROOT),
             "total_tokens": result.get("total_tokens", 0),
             "search2qa_data": trajectory_data,
         }
