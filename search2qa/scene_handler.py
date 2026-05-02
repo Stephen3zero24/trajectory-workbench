@@ -30,6 +30,7 @@ Internal naming note (A-2 issue #1, closed as naming-only):
 import asyncio
 import json
 import os
+import shlex
 import time
 from datetime import timedelta
 from typing import Callable, Optional
@@ -325,9 +326,9 @@ async def run_search2qa_in_sandbox(
             run_cmd = (
                 f'{env_cmd} && cd /workspace/search2qa && '
                 f'{SANDBOX_PYTHON} main.py '
-                f'--seed "{seed}" '
-                f'--mode {mode} '
-                f'--model {model} '
+                f'--seed {shlex.quote(seed)} '
+                f'--mode {shlex.quote(mode)} '
+                f'--model {shlex.quote(model)} '
                 f'--temperature {temperature} '
                 f'--max-turns {max_turns} '
                 f'--evolutions {max_evolutions} '
