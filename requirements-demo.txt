@@ -1,0 +1,16 @@
+# Demo-only deps for search2qa scenario. Full deps see requirements.txt.
+
+# ─── Core framework ───
+fastapi>=0.135.2
+uvicorn>=0.42.0
+httpx>=0.28.1
+pydantic>=2.12.5
+pydantic-settings>=2.13.1
+openai>=2.29.0
+python-dotenv>=1.2.2
+python-multipart>=0.0.26
+
+# ─── OpenSandbox stack ───
+opensandbox>=0.1.5
+opensandbox-server>=0.1.8
+opensandbox-code-interpreter>=0.1.1
