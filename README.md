@@ -519,6 +519,7 @@ docker build -t trajectory-workbench:demo .
 | --- | --- | --- |
 | `DEEPSEEK_API_KEY` | yes | LLM credential, set on the trajectory-workbench service |
 | `OPENSANDBOX_SERVER` | optional | full URL, defaults to `http://127.0.0.1:8080`; in docker-compose set to `http://opensandbox-server:8080` so the SDK connect path resolves to the sibling service |
+| `PLATFORM_SKILLS_URL` | yes (compose) | root URL of VibeDataBot's `/api/skills` endpoint. trajectory-workbench fetches the skill manifest at startup and **fails fast** if the URL is unreachable or returns zero active `trajectory-synthesis` skills. In docker-compose set to the VibeDataBot service URL (e.g. `http://vibedatabot:3000`). |
 
 ### Volumes
 
