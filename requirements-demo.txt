@@ -1,0 +1,19 @@
+# Demo-only deps for search2qa scenario. Full deps see requirements.txt.
+# opensandbox stack pinned to host venv versions: 0.1.12 added a server
+# startup gate that requires OPENSANDBOX_INSECURE_SERVER=YES or [server]
+# api_key. Pinning avoids version drift surprises mid-demo.
+
+# ─── Core framework ───
+fastapi>=0.135.2
+uvicorn>=0.42.0
+httpx>=0.28.1
+pydantic>=2.12.5
+pydantic-settings>=2.13.1
+openai>=2.29.0
+python-dotenv>=1.2.2
+python-multipart>=0.0.26
+
+# ─── OpenSandbox stack ───
+opensandbox==0.1.5
+opensandbox-server==0.1.8
+opensandbox-code-interpreter==0.1.1

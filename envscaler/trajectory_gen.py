@@ -518,7 +518,10 @@ async def run_step2(
     # 连接沙箱（需要 async with 来激活连接）
     if sandbox_id:
         try:
-            config_conn = ConnectionConfig(domain="127.0.0.1:8080", protocol="http")
+            from sandbox_utils import _parse_sandbox_endpoint
+            from .config import OPENSANDBOX_SERVER as _OSS
+            domain, protocol = _parse_sandbox_endpoint(_OSS)
+            config_conn = ConnectionConfig(domain=domain, protocol=protocol)
             sandbox = await Sandbox.connect(sandbox_id, connection_config=config_conn)
         except Exception as e:
             emit("warning", f"沙箱连接失败, 使用直接 HTTP 模式: {e}")

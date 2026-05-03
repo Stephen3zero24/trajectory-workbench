@@ -40,6 +40,10 @@ from opensandbox.sandbox import Sandbox
 from opensandbox.models.execd import RunCommandOpts
 from opensandbox.config import ConnectionConfig
 
+import sys as _sys
+_sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from sandbox_utils import _parse_sandbox_endpoint
+
 # ─── 配置 ─────────────────────────────────────────────────────────────────────
 
 OPENSANDBOX_SERVER = os.environ.get("OPENSANDBOX_SERVER", "http://127.0.0.1:8080")
@@ -99,7 +103,8 @@ async def create_sandbox() -> str:
 
 async def connect_sandbox(sandbox_id: str) -> Sandbox:
     """连接到已创建的沙箱"""
-    config = ConnectionConfig(domain="127.0.0.1:8080", protocol="http")
+    domain, protocol = _parse_sandbox_endpoint(OPENSANDBOX_SERVER)
+    config = ConnectionConfig(domain=domain, protocol=protocol)
     return await Sandbox.connect(sandbox_id, connection_config=config)
 
 

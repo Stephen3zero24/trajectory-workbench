@@ -72,6 +72,8 @@ from trajectory_agent.skill_manifest_loader import (
 
 # ─── 配置 ─────────────────────────────────────────────────────────────────────
 
+from sandbox_utils import _parse_sandbox_endpoint
+
 OPENSANDBOX_SERVER = os.environ.get("OPENSANDBOX_SERVER", "http://127.0.0.1:8080")
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
 DEEPSEEK_BASE_URL = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
@@ -142,7 +144,8 @@ async def create_sandbox_via_api() -> str:
 
 
 async def connect_sandbox(sandbox_id: str) -> Sandbox:
-    config = ConnectionConfig(domain="127.0.0.1:8080", protocol="http")
+    domain, protocol = _parse_sandbox_endpoint(OPENSANDBOX_SERVER)
+    config = ConnectionConfig(domain=domain, protocol=protocol)
     return await Sandbox.connect(sandbox_id, connection_config=config)
 
 

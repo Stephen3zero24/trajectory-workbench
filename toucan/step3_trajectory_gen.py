@@ -187,8 +187,10 @@ async def exec_in_sandbox(sandbox_id: str, command: str) -> str:
     try:
         from opensandbox.sandbox import Sandbox
         from opensandbox.config import ConnectionConfig
+        from sandbox_utils import _parse_sandbox_endpoint
 
-        config = ConnectionConfig(domain="127.0.0.1:8080", protocol="http")
+        domain, protocol = _parse_sandbox_endpoint(OPENSANDBOX_SERVER)
+        config = ConnectionConfig(domain=domain, protocol=protocol)
         sandbox = await Sandbox.connect(sandbox_id, connection_config=config)
         async with sandbox:
             result = await sandbox.commands.run(command, timeout=timedelta(seconds=30))
