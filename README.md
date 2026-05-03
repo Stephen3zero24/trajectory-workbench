@@ -500,6 +500,56 @@ colima start --vm-type=vz --vz-rosetta --memory 8 --cpu 4
 
 ---
 
+## Docker Deployment
+
+5/9 demo deployment is a 3-service docker-compose: VibeDataBot (platform
+side, separate repo) plus opensandbox-server and trajectory-workbench,
+both built from the **same image** in this repo and selected via the
+compose `command` field.
+
+### Build
+
+```bash
+docker build -t trajectory-workbench:demo .
+```
+
+### Required env
+
+| var | required | notes |
+| --- | --- | --- |
+| `DEEPSEEK_API_KEY` | yes | LLM credential, set on the trajectory-workbench service |
+| `OPENSANDBOX_SERVER` | optional | full URL, defaults to `http://127.0.0.1:8080`; in docker-compose set to `http://opensandbox-server:8080` so the SDK connect path resolves to the sibling service |
+
+### Volumes
+
+- `./output:/app/output` — persists trace artifacts written by search2qa scenarios
+- `./deploy/sandbox.toml:/etc/opensandbox/sandbox.toml:ro` — config for the
+  opensandbox-server service (mount only on that service)
+- `/var/run/docker.sock:/var/run/docker.sock` — **required on the
+  opensandbox-server service only**; trajectory-workbench doesn't need it.
+  The sandbox runtime spawns sibling containers via the host docker daemon.
+
+### Service commands
+
+```yaml
+services:
+  opensandbox-server:
+    image: trajectory-workbench:demo
+    command: ["opensandbox-server", "--config", "/etc/opensandbox/sandbox.toml"]
+  trajectory-workbench:
+    image: trajectory-workbench:demo
+    # default CMD is uvicorn backend:app — leave unset
+```
+
+### Platform integration
+
+VibeDataBot (separate repo, owned by Rui) reaches this service via the
+`TRAJECTORY_WORKBENCH_URL` env. Inside the same docker network the default
+is `http://trajectory-workbench:3100`. **The compose file itself lives in
+the VibeDataBot repo**, not here.
+
+---
+
 ## 📄 License
 
 Apache 2.0
