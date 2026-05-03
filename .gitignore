@@ -42,5 +42,8 @@ docs/*
 # 但 T2 系列 smoke validation log 是 commit 硬证据,需入 git
 !docs/T2-*-smoke-log.md
 
+# API contract 是 demo 集成方需要的稳定文档,不属于开发期笔记
+!docs/API.md
+
 # Toucan 运行时产物(pipeline 自动生成的 MCP server 注册表)
 toucan/mcp_servers/registry.json
