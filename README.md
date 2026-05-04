@@ -513,6 +513,25 @@ compose `command` field.
 docker build -t trajectory-workbench:demo .
 ```
 
+**Restricted networks (China mainland datacenters / transparent-proxy
+environments):** if the build fails fetching `deb.debian.org` (502 / timeout),
+override the APT mirror via `--build-arg`:
+
+```bash
+docker build \
+  --build-arg APT_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/debian \
+  -t trajectory-workbench:demo .
+```
+
+Available mirrors:
+
+- TUNA (Tsinghua): `https://mirrors.tuna.tsinghua.edu.cn/debian`
+- Aliyun: `https://mirrors.aliyun.com/debian`
+- USTC: `https://mirrors.ustc.edu.cn/debian`
+
+The `-security` suffix is preserved automatically — sed replaces only the
+`http://deb.debian.org/debian` prefix.
+
 ### Required env
 
 | var | required | notes |
