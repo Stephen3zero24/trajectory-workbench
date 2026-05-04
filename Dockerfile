@@ -5,7 +5,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-RUN apt-get update \
+# Optional APT mirror for restricted networks (e.g. China mainland datacenters
+# where deb.debian.org may be intercepted by transparent proxies).
+# Default empty = use upstream deb.debian.org.
+# Override: --build-arg APT_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/debian
+ARG APT_MIRROR=""
+RUN if [ -n "$APT_MIRROR" ]; then \
+      sed -i "s|http://deb.debian.org/debian|${APT_MIRROR}|g" /etc/apt/sources.list.d/debian.sources; \
+    fi \
+ && apt-get update \
  && apt-get install -y --no-install-recommends curl ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
