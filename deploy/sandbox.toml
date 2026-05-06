@@ -44,7 +44,7 @@ network_mode = "bridge"
 # Leave commented to default to bridge behavior; set to the docker host IP
 # (e.g. host.docker.internal on Docker Desktop) when sandbox endpoints
 # need to be reachable from outside the docker-compose network.
-# host_ip = ""
+host_ip = "host.docker.internal"
 # Drop dangerous capabilities and block privilege escalation
 drop_capabilities = ["AUDIT_WRITE", "MKNOD", "NET_ADMIN", "NET_RAW", "SYS_ADMIN", "SYS_MODULE", "SYS_PTRACE", "SYS_TIME", "SYS_TTY_CONFIG"]
 no_new_privileges = true
