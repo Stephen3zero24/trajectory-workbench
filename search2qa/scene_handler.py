@@ -75,6 +75,7 @@ SEARCH2QA_SANDBOX_REQUIRED_IMPORTS = {
     "openai": "openai",
     "python-dotenv": "dotenv",
     "tqdm": "tqdm",
+    "playwright": "playwright",
 }
 
 

@@ -3,12 +3,22 @@ FROM opensandbox/code-interpreter:v1.0.2
 # 预装 Search2QA 沙箱依赖到代码实际使用的 cpython-3.13.* 解释器
 # 这些依赖只属于 Search2QA sandbox 镜像，不进主 requirements.txt
 
+# Optional PyPI mirror for restricted networks. Default empty = use upstream pypi.org.
+# Override: --build-arg PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+ARG PIP_INDEX_URL=""
+
 COPY sandbox-requirements.txt /tmp/sandbox-requirements.txt
 
 RUN set -eux; \
     PYTHON_BIN=$(ls /opt/python/versions/cpython-3.13.*/bin/python3 | head -1); \
     echo "Using Python interpreter: ${PYTHON_BIN}"; \
-    ${PYTHON_BIN} -m pip install --no-cache-dir --break-system-packages -r /tmp/sandbox-requirements.txt; \
-    ${PYTHON_BIN} -c "import ddgs, requests, bs4, lxml, trafilatura, crawl4ai, fitz, pymupdf4llm, openai, dotenv, tqdm; print('search2qa sandbox deps import ok')"
+    if [ -n "${PIP_INDEX_URL}" ]; then PIP_ARGS="--index-url ${PIP_INDEX_URL}"; else PIP_ARGS=""; fi; \
+    ${PYTHON_BIN} -m pip install --no-cache-dir --break-system-packages \
+        --retries 10 --timeout 120 ${PIP_ARGS} \
+        -r /tmp/sandbox-requirements.txt; \
+    ${PYTHON_BIN} -m playwright install chromium; \
+    ${PYTHON_BIN} -c "import ddgs, requests, bs4, lxml, trafilatura, crawl4ai, fitz, pymupdf4llm, openai, dotenv, tqdm, playwright; print('search2qa sandbox deps import ok')"; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/* /tmp/sandbox-requirements.txt
 
 # 注：不修改 ENTRYPOINT/CMD，保持 base 镜像默认行为

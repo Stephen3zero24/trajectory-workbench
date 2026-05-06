@@ -9,3 +9,4 @@ pymupdf4llm>=0.0.4,<1
 openai>=1,<2
 python-dotenv>=1,<2
 tqdm>=4.66,<5
+playwright>=1.40,<2
