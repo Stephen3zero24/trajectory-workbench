@@ -1,0 +1,11 @@
+ddgs>=9.0,<10
+requests>=2.31,<3
+beautifulsoup4>=4.12,<5
+lxml>=4.9,<6
+trafilatura>=1.6,<2
+crawl4ai>=0.3,<1
+PyMuPDF>=1.23,<2
+pymupdf4llm>=0.0.4,<1
+openai>=1,<2
+python-dotenv>=1,<2
+tqdm>=4.66,<5

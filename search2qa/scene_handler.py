@@ -54,6 +54,29 @@ OPENSANDBOX_SERVER = os.environ.get("OPENSANDBOX_SERVER", "http://127.0.0.1:8080
 # both resolve at runtime.
 SANDBOX_PYTHON = "/opt/python/versions/cpython-3.13.*/bin/python3"
 
+# Sandbox image override. Default points at the dedicated Search2QA sandbox
+# image built from Dockerfile.search2qa-sandbox (deps preinstalled, see T1).
+SEARCH2QA_SANDBOX_IMAGE = os.environ.get(
+    "SEARCH2QA_SANDBOX_IMAGE",
+    "hidataagent-trajectory-search2qa-sandbox:demo",
+)
+
+# 包名（pip） -> import 名 映射，import check 用。版本约束维护在
+# sandbox-requirements.txt（仓库根），两处需保持包列表一致。
+SEARCH2QA_SANDBOX_REQUIRED_IMPORTS = {
+    "ddgs": "ddgs",
+    "requests": "requests",
+    "beautifulsoup4": "bs4",
+    "lxml": "lxml",
+    "trafilatura": "trafilatura",
+    "crawl4ai": "crawl4ai",
+    "PyMuPDF": "fitz",
+    "pymupdf4llm": "pymupdf4llm",
+    "openai": "openai",
+    "python-dotenv": "dotenv",
+    "tqdm": "tqdm",
+}
+
 
 def _result_failed(result) -> bool:
     """Check if a sandbox command result indicates failure.
@@ -91,7 +114,7 @@ async def create_sandbox() -> str:
         resp = await client.post(
             f"{OPENSANDBOX_SERVER}/v1/sandboxes",
             json={
-                "image": {"uri": "opensandbox/code-interpreter:v1.0.2"},
+                "image": {"uri": SEARCH2QA_SANDBOX_IMAGE},
                 "entrypoint": ["/opt/opensandbox/code-interpreter.sh"],
                 "resourceLimits": {},
             },
@@ -184,72 +207,135 @@ def _emit_full_stderr(
 # ─── 依赖安装 ──────────────────────────────────────────────────────────────────
 
 async def install_dependencies(sandbox: Sandbox, emit: Callable = None):
-    """在沙箱中安装 search2qa 的 Python 依赖"""
+    """Search2QA sandbox 依赖检查 + 可选 fallback 安装。
+
+    行为：
+    1. 在 sandbox 内 import-check 所有依赖（SEARCH2QA_SANDBOX_REQUIRED_IMPORTS）。
+    2. 全部齐全：emit "skip pip install" 后直接返回。
+    3. 缺失依赖：
+       - 默认（SEARCH2QA_ALLOW_RUNTIME_PIP_INSTALL != "1"）→ raise RuntimeError，
+         错误信息含缺失包名清单与镜像名，提示应改用预装镜像。
+       - 显式 SEARCH2QA_ALLOW_RUNTIME_PIP_INSTALL == "1" → 走 runtime pip install
+         legacy fallback（仅作为应急路径，不建议 demo 使用）。
+
+    历史背景：原实现先 ensurepip --upgrade --break-system-packages 再分组 pip install，
+    但 ensurepip 模块不接受 --break-system-packages 参数；本次重写把依赖固化到
+    专用 sandbox 镜像（Dockerfile.search2qa-sandbox），import-check 是默认路径。
+    """
+    required = SEARCH2QA_SANDBOX_REQUIRED_IMPORTS
 
     if emit:
-        emit("install", "开始安装 Python 依赖...")
+        emit("install", f"import-check sandbox deps ({len(required)} packages)...")
 
-    # 安装依赖（分批安装避免超时）
-    # PEP 668: cpython-3.14 venv is flagged externally-managed by uv;
-    # --break-system-packages bypasses the guard. Safe in throwaway sandbox.
-    dep_groups = [
-        # 搜索相关
-        f"{SANDBOX_PYTHON} -m pip install --break-system-packages ddgs",
-        # 爬虫相关
-        f"{SANDBOX_PYTHON} -m pip install --break-system-packages requests beautifulsoup4 lxml trafilatura",
-        # crawl4ai
-        f"{SANDBOX_PYTHON} -m pip install --break-system-packages crawl4ai>=0.3.0",
-        # PDF 处理
-        f"{SANDBOX_PYTHON} -m pip install --break-system-packages PyMuPDF pymupdf4llm",
-        # LLM 客户端
-        f"{SANDBOX_PYTHON} -m pip install --break-system-packages openai",
-        # 工具类
-        f"{SANDBOX_PYTHON} -m pip install --break-system-packages python-dotenv tqdm",
-    ]
+    # 把 import-check 脚本写入 sandbox /tmp 后执行；用文件而非 -c 单行，
+    # 是为避免 dict 字面量在 shell 引号嵌套里被误转义。
+    check_script = (
+        "import importlib, json, sys\n"
+        f"required = {required!r}\n"
+        "missing = []\n"
+        "for pkg, mod in required.items():\n"
+        "    try:\n"
+        "        importlib.import_module(mod)\n"
+        "    except Exception as e:\n"
+        "        missing.append({'pkg': pkg, 'mod': mod, 'err': str(e)})\n"
+        "print('IMPORT_CHECK_RESULT:' + json.dumps(missing))\n"
+        "sys.exit(0 if not missing else 1)\n"
+    )
 
-    # 确保沙箱里有 pip（v1.0.2 镜像移除了 pip）
-    if emit:
-        emit("install", "⚙️  bootstrap pip via ensurepip...")
-    ensurepip_result = await sandbox.commands.run(
-        f"{SANDBOX_PYTHON} -m ensurepip --upgrade --break-system-packages",
+    await sandbox.files.write_file(
+        "/tmp/_search2qa_import_check.py",
+        check_script.encode("utf-8"),
+    )
+    check_result = await sandbox.commands.run(
+        f"{SANDBOX_PYTHON} /tmp/_search2qa_import_check.py",
         opts=RunCommandOpts(timeout=timedelta(seconds=60)),
     )
-    ensurepip_err = "\n".join([l.text for l in ensurepip_result.logs.stderr]) if ensurepip_result.logs.stderr else ""
+
+    stdout = "\n".join([l.text for l in check_result.logs.stdout]) if check_result.logs.stdout else ""
+    stderr = "\n".join([l.text for l in check_result.logs.stderr]) if check_result.logs.stderr else ""
+
+    missing_payload = ""
+    for line in stdout.splitlines():
+        if line.startswith("IMPORT_CHECK_RESULT:"):
+            missing_payload = line[len("IMPORT_CHECK_RESULT:"):]
+            break
+
+    try:
+        missing_list = json.loads(missing_payload) if missing_payload else None
+    except json.JSONDecodeError:
+        missing_list = None
+
+    if missing_list is None:
+        # import-check 自身没跑出 IMPORT_CHECK_RESULT 行（如解释器路径错 / 沙箱被破坏）
+        diag = (stderr or stdout or "no IMPORT_CHECK_RESULT marker").strip()
+        msg = (
+            f"Search2QA sandbox import-check failed to produce a result line; "
+            f"sandbox image '{SEARCH2QA_SANDBOX_IMAGE}' may be malformed. "
+            f"Diagnostic: {diag[:500]}"
+        )
+        if emit:
+            emit("install_error", msg)
+        raise RuntimeError(msg)
+
+    if not missing_list:
+        if emit:
+            emit("install", "sandbox dependencies already installed; skip pip install")
+        return
+
+    missing_summary = ", ".join(
+        f"{m.get('pkg')} (import {m.get('mod')}): {m.get('err')}"
+        for m in missing_list
+    )
+
+    allow_runtime = os.environ.get("SEARCH2QA_ALLOW_RUNTIME_PIP_INSTALL") == "1"
+
+    if not allow_runtime:
+        msg = (
+            f"Search2QA sandbox dependencies missing: {missing_summary}. "
+            f"Sandbox image '{SEARCH2QA_SANDBOX_IMAGE}' should be built with deps "
+            f"preinstalled (see Dockerfile.search2qa-sandbox). "
+            f"Set SEARCH2QA_ALLOW_RUNTIME_PIP_INSTALL=1 to fallback to runtime "
+            f"pip install (not recommended for demo)."
+        )
+        if emit:
+            emit("install_error", msg)
+        raise RuntimeError(msg)
+
+    # ─── Legacy fallback: runtime pip install ──────────────────────────────
+    # 版本约束与 sandbox-requirements.txt 同源；保留原分组结构以维持超时友好性。
     if emit:
-        if not ensurepip_err:
-            emit("install", "✅ pip ready")
-        else:
-            _emit_full_stderr(emit, "install_warn", "ensurepip", ensurepip_err)
+        emit(
+            "install",
+            "SEARCH2QA_ALLOW_RUNTIME_PIP_INSTALL=1; "
+            "falling back to runtime pip install (legacy path, not recommended)",
+        )
+
+    dep_groups = [
+        f"{SANDBOX_PYTHON} -m pip install --break-system-packages 'ddgs>=9.0,<10'",
+        (
+            f"{SANDBOX_PYTHON} -m pip install --break-system-packages "
+            f"'requests>=2.31,<3' 'beautifulsoup4>=4.12,<5' 'lxml>=4.9,<6' 'trafilatura>=1.6,<2'"
+        ),
+        f"{SANDBOX_PYTHON} -m pip install --break-system-packages 'crawl4ai>=0.3,<1'",
+        f"{SANDBOX_PYTHON} -m pip install --break-system-packages 'PyMuPDF>=1.23,<2' 'pymupdf4llm>=0.0.4,<1'",
+        f"{SANDBOX_PYTHON} -m pip install --break-system-packages 'openai>=1,<2'",
+        f"{SANDBOX_PYTHON} -m pip install --break-system-packages 'python-dotenv>=1,<2' 'tqdm>=4.66,<5'",
+    ]
 
     for cmd in dep_groups:
         if emit:
             emit("install", f"执行: {cmd}")
-
         result = await sandbox.commands.run(
             cmd,
             opts=RunCommandOpts(timeout=timedelta(seconds=120)),
         )
-        stdout = "\n".join([l.text for l in result.logs.stdout]) if result.logs.stdout else ""
-        stderr = "\n".join([l.text for l in result.logs.stderr]) if result.logs.stderr else ""
-
-        if stderr and "error" in stderr.lower():
+        stderr_grp = "\n".join([l.text for l in result.logs.stderr]) if result.logs.stderr else ""
+        if stderr_grp and "error" in stderr_grp.lower():
             if emit:
-                _emit_full_stderr(emit, "install_warn", cmd.split()[-1], stderr)
-
-    # 安装 playwright（可选，失败不阻断）
-    try:
-        if emit:
-            emit("install", "安装 playwright（可选）...")
-        await sandbox.commands.run(
-            f"{SANDBOX_PYTHON} -m pip install --break-system-packages playwright && playwright install chromium --with-deps",
-            opts=RunCommandOpts(timeout=timedelta(seconds=180)),
-        )
-    except Exception:
-        if emit:
-            emit("install_warn", "playwright 安装跳过（非必需）")
+                _emit_full_stderr(emit, "install_warn", cmd.split()[-1], stderr_grp)
 
     if emit:
-        emit("install", "✅ 依赖安装完成")
+        emit("install", "runtime pip install fallback complete")
 
 
 # ─── 核心执行 ──────────────────────────────────────────────────────────────────
